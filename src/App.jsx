@@ -331,12 +331,12 @@ export default function App() {
         >
           Moneybillcounter
         </h1>
-        <button
-          onClick={handleLogout}
-          className="w-10 h-10 rounded-full overflow-hidden border-2 border-indigo-100 shadow-sm flex items-center justify-center text-2xl bg-white"
+        <div
+          onClick={() => { setActiveTab('profile'); setView('home'); setCurrentTrip(null); }}
+          className="w-10 h-10 rounded-full overflow-hidden border-2 border-indigo-100 shadow-sm flex items-center justify-center text-2xl bg-white cursor-pointer hover:scale-105 transition-transform"
         >
           {userProfile?.emoji || (user?.photo ? <img src={user.photo} alt={user.name} className="w-full h-full object-cover" /> : '👤')}
-        </button>
+        </div>
       </header>
 
       {/* Views */}
