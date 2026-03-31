@@ -1,22 +1,33 @@
 import React, { useState } from 'react';
 import { X, Copy, Check, Trash2 } from 'lucide-react';
 import { CURRENCIES } from '../utils/currency';
+import { getAllEmojis } from '../utils/emojis';
 import { doc, updateDoc, deleteDoc } from 'firebase/firestore';
 import { db } from '../App';
 
-export default function TripSettingsModal({ trip, user, onClose, onUpdated, showToast }) {
+export default function TripSettingsModal({ trip, user, userProfile, onClose, onUpdated, showToast }) {
   const [tripName, setTripName] = useState(trip.name);
   const [baseCurrency, setBaseCurrency] = useState(trip.baseCurrency);
   const [isLoading, setIsLoading] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [showEmojiPicker, setShowEmojiPicker] = useState(null); // member name or null
+  const [members, setMembers] = useState(trip.members);
 
   const isCreator = trip.creatorEmail === user.email;
+  const allEmojis = getAllEmojis();
 
   const copyInviteCode = () => {
     navigator.clipboard.writeText(trip.inviteCode);
     setCopied(true);
     showToast('Invite code copied!', 'success');
     setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleUpdateEmoji = (memberName, emoji) => {
+    setMembers(prev => prev.map(m => 
+      m.name === memberName ? { ...m, emoji } : m
+    ));
+    setShowEmojiPicker(null);
   };
 
   const handleUpdate = async () => {
@@ -27,6 +38,7 @@ export default function TripSettingsModal({ trip, user, onClose, onUpdated, show
       await updateDoc(doc(db, 'trips', trip.id), {
         name: tripName.trim(),
         baseCurrency,
+        members,
         updatedAt: Date.now()
       });
       showToast('Trip updated', 'success');
@@ -87,7 +99,7 @@ export default function TripSettingsModal({ trip, user, onClose, onUpdated, show
             type="text"
             value={tripName}
             onChange={(e) => setTripName(e.target.value)}
-            className="w-full p-4 bg-slate-100 rounded-2xl font-bold outline-none"
+            className="w-full p-4 bg-slate-100 rounded-2xl font-bold outline-none focus:ring-2 focus:ring-indigo-500"
             disabled={!isCreator}
           />
         </div>
@@ -113,17 +125,47 @@ export default function TripSettingsModal({ trip, user, onClose, onUpdated, show
           </div>
         </div>
 
-        {/* Members */}
+        {/* Members with Emoji */}
         <div className="mb-6">
           <label className="text-xs font-bold text-slate-400 uppercase mb-2 block">
-            Members ({trip.members.length})
+            Members ({members.length})
           </label>
           <div className="space-y-2">
-            {trip.members.map((member, idx) => (
+            {members.map((member, idx) => (
               <div key={idx} className="flex items-center justify-between p-3 bg-slate-50 rounded-xl">
-                <div>
-                  <p className="font-bold text-sm">{member.name}</p>
-                  <p className="text-xs text-slate-400">{member.email}</p>
+                <div className="flex items-center gap-3">
+                  <div className="relative">
+                    <button
+                      onClick={() => setShowEmojiPicker(showEmojiPicker === member.name ? null : member.name)}
+                      className="text-2xl hover:scale-110 transition-transform"
+                    >
+                      {member.emoji || '👤'}
+                    </button>
+                    
+                    {/* Emoji Picker */}
+                    {showEmojiPicker === member.name && (
+                      <div className="absolute top-10 left-0 bg-white p-3 rounded-2xl shadow-lg border border-slate-200 z-10 w-64">
+                        <p className="text-xs font-bold text-slate-400 uppercase mb-2">Choose Emoji</p>
+                        <div className="grid grid-cols-8 gap-1 max-h-48 overflow-y-auto">
+                          {allEmojis.map((emoji, eIdx) => (
+                            <button
+                              key={eIdx}
+                              onClick={() => handleUpdateEmoji(member.name, emoji)}
+                              className={`text-xl hover:bg-slate-100 p-1 rounded transition-colors ${
+                                member.emoji === emoji ? 'bg-indigo-100' : ''
+                              }`}
+                            >
+                              {emoji}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                  <div>
+                    <p className="font-bold text-sm">{member.name}</p>
+                    <p className="text-xs text-slate-400">{member.email}</p>
+                  </div>
                 </div>
                 {member.email === trip.creatorEmail && (
                   <span className="text-xs bg-indigo-100 text-indigo-600 px-2 py-1 rounded-lg font-bold">
@@ -133,6 +175,9 @@ export default function TripSettingsModal({ trip, user, onClose, onUpdated, show
               </div>
             ))}
           </div>
+          <p className="text-xs text-slate-400 mt-2">
+            💡 Emoji changes are saved when you click "Save Changes"
+          </p>
         </div>
 
         {/* Actions */}
@@ -141,14 +186,14 @@ export default function TripSettingsModal({ trip, user, onClose, onUpdated, show
             <button
               onClick={handleDelete}
               disabled={isLoading}
-              className="p-4 bg-rose-100 text-rose-600 rounded-2xl disabled:opacity-50"
+              className="p-4 bg-rose-100 text-rose-600 rounded-2xl disabled:opacity-50 hover:bg-rose-200 transition-colors"
             >
               <Trash2 size={20} />
             </button>
             <button
               onClick={handleUpdate}
               disabled={isLoading || !tripName.trim()}
-              className="flex-1 bg-slate-900 text-white py-4 rounded-2xl font-black uppercase disabled:opacity-50"
+              className="flex-1 bg-slate-900 text-white py-4 rounded-2xl font-black uppercase disabled:opacity-50 hover:bg-slate-800 transition-colors"
             >
               {isLoading ? 'Saving...' : 'Save Changes'}
             </button>

@@ -26,28 +26,37 @@ export default function Toast({ message, type = 'info', onClose, duration = 3000
 
   useEffect(() => {
     const timer = setTimeout(() => {
-      setIsVisible(false);
-      setTimeout(onClose, 300); // Wait for fade out animation
+      handleClose();
     }, duration);
 
     return () => clearTimeout(timer);
-  }, [duration, onClose]);
+  }, [duration]);
+
+  const handleClose = () => {
+    setIsVisible(false);
+    setTimeout(() => {
+      if (onClose) onClose();
+    }, 300);
+  };
 
   return (
     <div
       className={`fixed top-4 left-4 right-4 max-w-md mx-auto z-[100] transition-all duration-300 ${
-        isVisible ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-2'
+        isVisible ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-2 pointer-events-none'
       }`}
     >
-      <div className={`${config.bg} text-white p-4 rounded-2xl shadow-lg flex items-center gap-3`}>
+      <div 
+        className={`${config.bg} text-white p-4 rounded-2xl shadow-lg flex items-center gap-3 cursor-pointer`}
+        onClick={handleClose}
+      >
         <div className={`${config.iconBg} p-2 rounded-xl`}>
           <Icon size={20} />
         </div>
         <p className="flex-1 font-medium text-sm">{message}</p>
         <button
-          onClick={() => {
-            setIsVisible(false);
-            setTimeout(onClose, 300);
+          onClick={(e) => {
+            e.stopPropagation();
+            handleClose();
           }}
           className="p-1 hover:bg-white/20 rounded-lg transition-colors"
         >
@@ -62,13 +71,17 @@ export default function Toast({ message, type = 'info', onClose, duration = 3000
 export function useToast() {
   const [toasts, setToasts] = useState([]);
 
-  const showToast = (message, type = 'info', duration = 3000) => {
-    const id = Date.now();
+  const showToast = (message, type = 'info', duration = 4000) => {
+    const id = Date.now() + Math.random();
     setToasts(prev => [...prev, { id, message, type, duration }]);
   };
 
   const removeToast = (id) => {
     setToasts(prev => prev.filter(t => t.id !== id));
+  };
+
+  const clearAllToasts = () => {
+    setToasts([]);
   };
 
   const ToastContainer = () => (
@@ -85,5 +98,5 @@ export function useToast() {
     </>
   );
 
-  return { showToast, ToastContainer };
+  return { showToast, clearAllToasts, ToastContainer };
 }

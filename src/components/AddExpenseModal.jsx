@@ -18,29 +18,74 @@ export default function AddExpenseModal({ trip, user, onClose, onSave, isLoading
   const [selectedCurrency, setSelectedCurrency] = useState(trip.baseCurrency);
   const [manualAmount, setManualAmount] = useState('');
   const [manualDesc, setManualDesc] = useState('');
+  const [selectedPayer, setSelectedPayer] = useState(user.name);
+  const [splitMode, setSplitMode] = useState('all'); // 'all', 'specific', 'exclude'
   const [selectedMembers, setSelectedMembers] = useState(trip.members.map(m => m.name));
   const [useMagicMode, setUseMagicMode] = useState(true);
 
-  // Parse natural language input
+  // Parse natural language input with payer and split parsing
   const parsedExpense = useMemo(() => {
     if (!nlInput.trim()) return null;
     
+    let text = nlInput;
+    let payer = user.name;
+    let splitWith = [...trip.members.map(m => m.name)];
+    let mode = 'all';
+    
+    // Parse payer: "X paid" or "paid by X"
+    const payerMatch = text.match(/(?:^|\s)(\w+)\s+(?:paid|pay)/i) || 
+                       text.match(/paid\s+by\s+(\w+)/i);
+    if (payerMatch) {
+      const payerName = trip.members.find(m => 
+        m.name.toLowerCase().includes(payerMatch[1].toLowerCase())
+      );
+      if (payerName) {
+        payer = payerName.name;
+        text = text.replace(payerMatch[0], ' ');
+      }
+    }
+    
+    // Parse split: "with X and Y" or "split with X, Y"
+    const withMatch = text.match(/(?:with|split\s+with)\s+([\w\s,]+)/i);
+    if (withMatch) {
+      const names = withMatch[1].split(/[,\s]+/).filter(n => n.trim());
+      const matchedMembers = names.map(name => 
+        trip.members.find(m => m.name.toLowerCase().includes(name.toLowerCase()))
+      ).filter(Boolean).map(m => m.name);
+      
+      if (matchedMembers.length > 0) {
+        splitWith = matchedMembers;
+        mode = 'specific';
+        text = text.replace(withMatch[0], ' ');
+      }
+    }
+    
+    // Parse exclude: "except X" or "all except X"
+    const exceptMatch = text.match(/(?:all\s+)?except\s+([\w\s,]+)/i);
+    if (exceptMatch) {
+      const names = exceptMatch[1].split(/[,\s]+/).filter(n => n.trim());
+      const excludedMembers = names.map(name => 
+        trip.members.find(m => m.name.toLowerCase().includes(name.toLowerCase()))
+      ).filter(Boolean).map(m => m.name);
+      
+      if (excludedMembers.length > 0) {
+        splitWith = trip.members.map(m => m.name).filter(n => !excludedMembers.includes(n));
+        mode = 'exclude';
+        text = text.replace(exceptMatch[0], ' ');
+      }
+    }
+    
     // Extract amount
-    const amountMatch = nlInput.match(/(\d+(\.\d+)?)/);
+    const amountMatch = text.match(/(\d+(\.\d+)?)/);
     const amount = amountMatch ? parseFloat(amountMatch[0]) : 0;
     
     // Extract currency
-    const currency = parseCurrencyFromText(nlInput) || trip.baseCurrency;
-    
-    // Extract members mentioned
-    const mentionedMembers = trip.members.filter(m => 
-      new RegExp(m.name.split(' ')[0], 'i').test(nlInput)
-    ).map(m => m.name);
+    const currency = parseCurrencyFromText(text) || trip.baseCurrency;
     
     // Clean description
-    const desc = nlInput
+    const desc = text
       .replace(/\d+(\.\d+)?/g, '')
-      .replace(/(jpy|twd|hkd|yen|for|with|split|nt|hk\$|¥|NT\$)/gi, '')
+      .replace(/(jpy|twd|hkd|yen|for|with|split|nt|hk\$|¥|NT\$|paid|pay|except|all)/gi, '')
       .replace(trip.members.map(m => m.name.split(' ')[0]).join('|'), 'gi', '')
       .trim() || 'Expense';
     
@@ -48,9 +93,11 @@ export default function AddExpenseModal({ trip, user, onClose, onSave, isLoading
       desc,
       amount,
       currency,
-      splitWith: mentionedMembers.length > 0 ? mentionedMembers : trip.members.map(m => m.name)
+      payer,
+      splitWith,
+      splitMode: mode
     };
-  }, [nlInput, trip]);
+  }, [nlInput, trip, user]);
 
   // Manual mode validation
   const manualExpense = useMemo(() => {
@@ -59,22 +106,33 @@ export default function AddExpenseModal({ trip, user, onClose, onSave, isLoading
     const amount = parseFloat(manualAmount) || 0;
     if (amount <= 0 || !manualDesc.trim()) return null;
     
+    let splitWith = selectedMembers;
+    if (splitMode === 'all') {
+      splitWith = trip.members.map(m => m.name);
+    }
+    
     return {
       desc: manualDesc.trim(),
       amount,
       currency: selectedCurrency,
-      splitWith: selectedMembers
+      payer: selectedPayer,
+      splitWith,
+      splitMode
     };
-  }, [useMagicMode, manualAmount, manualDesc, selectedCurrency, selectedMembers]);
+  }, [useMagicMode, manualAmount, manualDesc, selectedCurrency, selectedPayer, splitMode, selectedMembers, trip]);
 
   const expenseToSave = useMagicMode ? parsedExpense : manualExpense;
 
   const handleSave = () => {
     if (!expenseToSave || expenseToSave.amount <= 0) return;
     
+    // Validate splitWith isn't empty (prevents division by zero in settlements)
+    if (!expenseToSave.splitWith || expenseToSave.splitWith.length === 0) {
+      return; // Don't save expenses with no one to split
+    }
+    
     onSave({
       ...expenseToSave,
-      payer: user.name,
       category: selectedCategory,
       tripId: trip.id,
       timestamp: Date.now(),
@@ -90,9 +148,21 @@ export default function AddExpenseModal({ trip, user, onClose, onSave, isLoading
     );
   };
 
+  const getSplitPreview = () => {
+    if (!expenseToSave || !expenseToSave.splitWith || expenseToSave.splitWith.length === 0) return null;
+    
+    const perPerson = expenseToSave.amount / expenseToSave.splitWith.length;
+    return {
+      members: expenseToSave.splitWith,
+      perPerson
+    };
+  };
+
+  const splitPreview = getSplitPreview();
+
   return (
     <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[50] flex items-end">
-      <div className="bg-white w-full max-w-md mx-auto rounded-t-[48px] p-8 pb-12 animate-in slide-in-from-bottom duration-300">
+      <div className="bg-white w-full max-w-md mx-auto rounded-t-[48px] p-8 pb-12 animate-in slide-in-from-bottom duration-300 max-h-[90vh] overflow-y-auto">
         {/* Header */}
         <div className="flex justify-between items-center mb-6">
           <h2 className="text-xl font-black italic">Log Expense</h2>
@@ -130,8 +200,8 @@ export default function AddExpenseModal({ trip, user, onClose, onSave, isLoading
               value={nlInput}
               onChange={(e) => setNlInput(e.target.value)}
               className="w-full p-6 bg-slate-50 rounded-3xl mb-4 font-bold outline-none resize-none"
-              placeholder="Try: 5000 JPY for sushi with Bella"
-              rows={2}
+              placeholder='Try: "5000 JPY for sushi with Bella" or "Lunch Mike paid except John"'
+              rows={3}
             />
             
             {parsedExpense && parsedExpense.amount > 0 && (
@@ -139,7 +209,10 @@ export default function AddExpenseModal({ trip, user, onClose, onSave, isLoading
                 <p className="text-xs font-bold text-indigo-600 uppercase mb-2">Parsed Result</p>
                 <p className="font-bold">{parsedExpense.desc}</p>
                 <p className="text-sm text-slate-600">
-                  {parsedExpense.amount} {parsedExpense.currency} • Split with {parsedExpense.splitWith.length} people
+                  {parsedExpense.amount} {parsedExpense.currency} • Paid by {parsedExpense.payer}
+                </p>
+                <p className="text-sm text-slate-600">
+                  Split with {parsedExpense.splitWith.length} {parsedExpense.splitWith.length === 1 ? 'person' : 'people'}
                 </p>
               </div>
             )}
@@ -174,24 +247,70 @@ export default function AddExpenseModal({ trip, user, onClose, onSave, isLoading
               </select>
             </div>
 
-            {/* Member Selection */}
+            {/* Payer Selection */}
             <div className="mb-4">
-              <p className="text-xs font-bold text-slate-400 uppercase mb-2">Split with</p>
-              <div className="flex flex-wrap gap-2">
+              <p className="text-xs font-bold text-slate-400 uppercase mb-2">Who Paid?</p>
+              <select
+                value={selectedPayer}
+                onChange={(e) => setSelectedPayer(e.target.value)}
+                className="w-full p-4 bg-slate-100 rounded-2xl font-bold outline-none"
+              >
                 {trip.members.map(member => (
-                  <button
-                    key={member.name}
-                    onClick={() => toggleMember(member.name)}
-                    className={`px-3 py-2 rounded-xl text-sm font-bold transition-all ${
-                      selectedMembers.includes(member.name)
-                        ? 'bg-indigo-600 text-white'
-                        : 'bg-slate-100 text-slate-600'
-                    }`}
-                  >
-                    {member.name.split(' ')[0]}
-                  </button>
+                  <option key={member.name} value={member.name}>
+                    {member.emoji || '👤'} {member.name}
+                  </option>
                 ))}
+              </select>
+            </div>
+
+            {/* Split Mode */}
+            <div className="mb-4">
+              <p className="text-xs font-bold text-slate-400 uppercase mb-2">Split With</p>
+              <div className="flex gap-2 mb-3">
+                <button
+                  onClick={() => setSplitMode('all')}
+                  className={`px-4 py-2 rounded-xl text-sm font-bold transition-all ${
+                    splitMode === 'all' ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-600'
+                  }`}
+                >
+                  All
+                </button>
+                <button
+                  onClick={() => setSplitMode('specific')}
+                  className={`px-4 py-2 rounded-xl text-sm font-bold transition-all ${
+                    splitMode === 'specific' ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-600'
+                  }`}
+                >
+                  Specific
+                </button>
+                <button
+                  onClick={() => setSplitMode('exclude')}
+                  className={`px-4 py-2 rounded-xl text-sm font-bold transition-all ${
+                    splitMode === 'exclude' ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-600'
+                  }`}
+                >
+                  Exclude
+                </button>
               </div>
+
+              {splitMode !== 'all' && (
+                <div className="flex flex-wrap gap-2">
+                  {trip.members.map(member => (
+                    <button
+                      key={member.name}
+                      onClick={() => toggleMember(member.name)}
+                      className={`px-3 py-2 rounded-xl text-sm font-bold transition-all ${
+                        (splitMode === 'specific' && selectedMembers.includes(member.name)) ||
+                        (splitMode === 'exclude' && !selectedMembers.includes(member.name))
+                          ? 'bg-indigo-600 text-white'
+                          : 'bg-slate-100 text-slate-600'
+                      }`}
+                    >
+                      {member.emoji || '👤'} {member.name.split(' ')[0]}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           </>
         )}
@@ -220,10 +339,30 @@ export default function AddExpenseModal({ trip, user, onClose, onSave, isLoading
           </div>
         </div>
 
+        {/* Split Preview */}
+        {splitPreview && (
+          <div className="bg-slate-50 p-4 rounded-2xl mb-6">
+            <p className="text-xs font-bold text-slate-400 uppercase mb-2">Split Preview</p>
+            <p className="font-bold text-lg">
+              {splitPreview.perPerson.toFixed(2)} {expenseToSave?.currency} each
+            </p>
+            <p className="text-sm text-slate-500">
+              Split between {splitPreview.members.join(', ')}
+            </p>
+          </div>
+        )}
+
         {/* Save Button */}
         <button
           onClick={handleSave}
-          disabled={!expenseToSave || expenseToSave.amount <= 0 || isLoading}
+          disabled={
+            !expenseToSave || 
+            expenseToSave.amount <= 0 || 
+            isLoading || 
+            !expenseToSave.splitWith || 
+            expenseToSave.splitWith.length === 0
+          }
+          title={(!expenseToSave.splitWith || expenseToSave.splitWith.length === 0) ? 'Select at least one person to split with' : ''}
           className="w-full bg-slate-900 text-white py-5 rounded-3xl font-black uppercase tracking-widest disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {isLoading ? 'Saving...' : 'Confirm & Save'}
