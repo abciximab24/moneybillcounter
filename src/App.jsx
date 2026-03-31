@@ -121,103 +121,88 @@ export default function App() {
     return unsubscribe;
   }, []);
 
-  // Load trips for user
+  // Load trips for user using getDocs (avoids Firestore Listen connection issues)
   useEffect(() => {
     if (!user) return;
-    
-    const q = query(
-      collection(db, 'trips'),
-      where('memberEmails', 'array-contains', user.email)
-    );
-    
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const loadedTrips = snapshot.docs.map(d => {
-        const data = d.data();
-        // Assign emojis to members who don't have them
-        const existingEmojis = data.members?.filter(m => m.emoji).map(m => m.emoji) || [];
-        const membersWithEmojis = data.members?.map(m => ({
-          ...m,
-          emoji: m.emoji || assignEmojiToMember(m, existingEmojis)
-        })) || [];
-        
-        return { id: d.id, ...data, members: membersWithEmojis };
-      });
-      setTrips(loadedTrips);
-    }, (error) => {
-      console.error('Error loading trips:', error);
-      showToast('Failed to load trips', 'error');
-    });
 
-    return unsubscribe;
-  }, [user, showToast]);
+    let isMounted = true;
 
-  // Load expenses for active trip with fallback
-  useEffect(() => {
-    if (!activeTrip) return;
-
-    let unsubscribe = null;
-    let retryCount = 0;
-    const maxRetries = 3;
-
-    const loadExpensesWithFallback = async () => {
-      const q = query(
-        collection(db, 'expenses'),
-        where('tripId', '==', activeTrip.id),
-        orderBy('timestamp', 'desc')
-      );
-
-      // Try onSnapshot first
+    const loadTrips = async () => {
       try {
-        unsubscribe = onSnapshot(q, 
-          (snapshot) => {
-            const loadedExpenses = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-            setExpenses(loadedExpenses);
-            retryCount = 0; // Reset retry count on success
-          },
-          async (error) => {
-            console.error('onSnapshot error:', error);
-            
-            // Fallback to getDocs if onSnapshot fails
-            if (retryCount < maxRetries) {
-              retryCount++;
-              console.log(`Retrying with getDocs (attempt ${retryCount}/${maxRetries})...`);
-              
-              try {
-                const snapshot = await getDocs(q);
-                const loadedExpenses = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-                setExpenses(loadedExpenses);
-                showToast('Loaded expenses (real-time sync unavailable)', 'info');
-              } catch (getDocsError) {
-                console.error('getDocs fallback also failed:', getDocsError);
-                showToast('Failed to load expenses. Please refresh.', 'error');
-              }
-            } else {
-              showToast('Connection issues. Please refresh the page.', 'error');
-            }
-          }
+        const q = query(
+          collection(db, 'trips'),
+          where('memberEmails', 'array-contains', user.email)
         );
+        const snapshot = await getDocs(q);
+        if (isMounted) {
+          const loadedTrips = snapshot.docs.map(d => {
+            const data = d.data();
+            const existingEmojis = data.members?.filter(m => m.emoji).map(m => m.emoji) || [];
+            const membersWithEmojis = data.members?.map(m => ({
+              ...m,
+              emoji: m.emoji || assignEmojiToMember(m, existingEmojis)
+            })) || [];
+            
+            return { id: d.id, ...data, members: membersWithEmojis };
+          });
+          setTrips(loadedTrips);
+        }
       } catch (error) {
-        console.error('Error setting up expense listener:', error);
-        
-        // Direct fallback to getDocs
-        try {
-          const snapshot = await getDocs(q);
-          const loadedExpenses = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-          setExpenses(loadedExpenses);
-        } catch (getDocsError) {
-          console.error('getDocs also failed:', getDocsError);
-          showToast('Failed to load expenses', 'error');
+        console.error('Error loading trips:', error);
+        if (isMounted) {
+          showToast('Failed to load trips', 'error');
         }
       }
     };
 
-    loadExpensesWithFallback();
+    loadTrips();
 
-    // Cleanup
+    // Refresh every 15 seconds
+    const intervalId = setInterval(loadTrips, 15000);
+
     return () => {
-      if (unsubscribe) {
-        unsubscribe();
+      isMounted = false;
+      clearInterval(intervalId);
+    };
+  }, [user, showToast]);
+
+  // Load expenses for active trip using getDocs (more reliable than onSnapshot with connection issues)
+  useEffect(() => {
+    if (!activeTrip) return;
+
+    let isMounted = true;
+    const isValidExpense = (e) => e && typeof e === 'object' && typeof e.id === 'string';
+
+    const loadExpenses = async () => {
+      try {
+        // Use getDocs as primary method (avoids Firestore Listen connection issues)
+        const q = query(
+          collection(db, 'expenses'),
+          where('tripId', '==', activeTrip.id),
+          orderBy('timestamp', 'desc')
+        );
+        const snapshot = await getDocs(q);
+        if (isMounted) {
+          const loadedExpenses = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+          console.log(`Loaded ${loadedExpenses.length} expenses for trip ${activeTrip.id}`);
+          setExpenses(loadedExpenses);
+        }
+      } catch (error) {
+        console.error('Error loading expenses:', error);
+        if (isMounted) {
+          showToast('Failed to load expenses. Please refresh.', 'error');
+        }
       }
+    };
+
+    loadExpenses();
+
+    // Also set up a periodic refresh to catch new expenses
+    const intervalId = setInterval(loadExpenses, 10000);
+
+    return () => {
+      isMounted = false;
+      clearInterval(intervalId);
     };
   }, [activeTrip, showToast]);
 

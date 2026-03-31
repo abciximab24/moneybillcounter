@@ -359,10 +359,10 @@ export default function AddExpenseModal({ trip, user, onClose, onSave, isLoading
             !expenseToSave || 
             expenseToSave.amount <= 0 || 
             isLoading || 
-            !expenseToSave.splitWith || 
+            !Array.isArray(expenseToSave.splitWith) || 
             expenseToSave.splitWith.length === 0
           }
-          title={(!expenseToSave.splitWith || expenseToSave.splitWith.length === 0) ? 'Select at least one person to split with' : ''}
+          title={(!expenseToSave || !Array.isArray(expenseToSave.splitWith) || expenseToSave.splitWith.length === 0) ? 'Select at least one person to split with' : ''}
           className="w-full bg-slate-900 text-white py-5 rounded-3xl font-black uppercase tracking-widest disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {isLoading ? 'Saving...' : 'Confirm & Save'}

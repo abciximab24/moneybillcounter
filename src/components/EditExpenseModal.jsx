@@ -5,12 +5,13 @@ import { doc, updateDoc } from 'firebase/firestore';
 import { db } from '../App';
 
 export default function EditExpenseModal({ expense, trip, onClose, onUpdated, showToast }) {
-  const [desc, setDesc] = useState(expense.desc);
-  const [amount, setAmount] = useState(expense.amount.toString());
-  const [currency, setCurrency] = useState(expense.currency);
-  const [payer, setPayer] = useState(expense.payer);
-  const [splitMode, setSplitMode] = useState(expense.splitMode || 'all');
-  const [selectedMembers, setSelectedMembers] = useState(expense.splitWith || trip.members.map(m => m.name));
+  const safeExpense = expense && typeof expense === 'object' ? expense : {};
+  const [desc, setDesc] = useState(safeExpense.desc || '');
+  const [amount, setAmount] = useState(safeExpense.amount?.toString() || '');
+  const [currency, setCurrency] = useState(safeExpense.currency || trip.baseCurrency || 'HKD');
+  const [payer, setPayer] = useState(safeExpense.payer || '');
+  const [splitMode, setSplitMode] = useState(safeExpense.splitMode || 'all');
+  const [selectedMembers, setSelectedMembers] = useState(Array.isArray(safeExpense.splitWith) ? safeExpense.splitWith : trip.members.map(m => m.name));
   const [isLoading, setIsLoading] = useState(false);
 
   const handleUpdate = async () => {
