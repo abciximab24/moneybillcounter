@@ -296,13 +296,15 @@ export default function App() {
         ...expenseData,
         memberEmails // Snapshot of who each person was at time of expense
       });
+      showToast('Expense logged!', 'success');
+      setShowAddExpense(false);
     } catch (error) {
       console.error('Save expense error:', error);
       showToast('Failed to save expense', 'error');
     } finally {
       setIsLoading(false);
     }
-  }, [showToast]);
+  }, [showToast, activeTrip]);
 
   const handleDeleteExpense = useCallback(async (expenseId) => {
     if (!confirm('Delete this expense?')) return;
