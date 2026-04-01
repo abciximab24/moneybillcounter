@@ -30,15 +30,16 @@ export default function SettlementModal({ trip, expenses, exchangeRates, onClose
     return unsubscribe;
   }, [trip.id]);
 
-  // Calculate balances with null safety
+  // Calculate balances using name-to-email resolution
+  // If name changed since expense was created, memberEmails snapshot resolves the original name
   const calculateBalances = useCallback(() => {
     const balances = {};
     if (!trip.members || !Array.isArray(trip.members)) return balances;
+    // Initialize balances keyed by current name (for display)
     trip.members.forEach(m => { balances[m.name] = 0; });
 
     if (!expenses || !Array.isArray(expenses)) return balances;
     expenses.forEach(expense => {
-      // Skip null/undefined expenses and those without valid splitWith
       if (!expense || typeof expense !== 'object') return;
       if (!expense.splitWith || !Array.isArray(expense.splitWith) || expense.splitWith.length === 0) return;
       
@@ -46,15 +47,33 @@ export default function SettlementModal({ trip, expenses, exchangeRates, onClose
       const amountInBase = expense.amount * rate;
       const share = amountInBase / expense.splitWith.length;
 
-      // Payer gets credit (only if payer exists in balances)
-      if (expense.payer && balances[expense.payer] !== undefined) {
-        balances[expense.payer] += amountInBase;
+      // memberEmails is the snapshot of name->email at expense creation time
+      const memberEmails = expense.memberEmails || {};
+      
+      // Resolve payer email from snapshot, then find current name for that email
+      let payerEmail = memberEmails[expense.payer];
+      if (!payerEmail) {
+        const currentMember = trip.members.find(m => m.name === expense.payer);
+        payerEmail = currentMember?.email;
+      }
+      // Find the current name for this email
+      const payerMember = trip.members.find(m => m.email === payerEmail);
+      const currentPayerName = payerMember?.name;
+      if (currentPayerName && balances[currentPayerName] !== undefined) {
+        balances[currentPayerName] += amountInBase;
       }
 
-      // Everyone who splits owes their share (only if they exist in balances)
+      // Resolve split participants by email, then find current name
       expense.splitWith.forEach(name => {
-        if (name && balances[name] !== undefined) {
-          balances[name] -= share;
+        let email = memberEmails[name];
+        if (!email) {
+          const currentMember = trip.members.find(m => m.name === name);
+          email = currentMember?.email;
+        }
+        const splitMember = trip.members.find(m => m.email === email);
+        const currentName = splitMember?.name;
+        if (currentName && balances[currentName] !== undefined) {
+          balances[currentName] -= share;
         }
       });
     });

@@ -285,9 +285,17 @@ export default function App() {
   const handleSaveExpense = useCallback(async (expenseData) => {
     setIsLoading(true);
     try {
-      await addDoc(collection(db, 'expenses'), expenseData);
-      showToast('Expense logged!', 'success');
-      setShowAddExpense(false);
+      // Create a name-to-email mapping from trip members for future reference
+      const memberEmails = {};
+      if (activeTrip?.members) {
+        activeTrip.members.forEach(m => {
+          memberEmails[m.name] = m.email;
+        });
+      }
+      await addDoc(collection(db, 'expenses'), {
+        ...expenseData,
+        memberEmails // Snapshot of who each person was at time of expense
+      });
     } catch (error) {
       console.error('Save expense error:', error);
       showToast('Failed to save expense', 'error');
