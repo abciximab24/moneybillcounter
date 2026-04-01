@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider, signInWithPopup, onAuthStateChanged, signOut } from 'firebase/auth';
-import { getFirestore, collection, addDoc, onSnapshot, query, where, orderBy, doc, deleteDoc, getDoc, getDocs, setDoc } from 'firebase/firestore';
+import { getFirestore, collection, addDoc, onSnapshot, query, where, orderBy, doc, deleteDoc, getDoc, getDocs, setDoc, updateDoc, arrayUnion } from 'firebase/firestore';
 
 // Components
 import LoginPage from './components/LoginPage';
@@ -228,9 +228,33 @@ export default function App() {
     }
   }, [showToast]);
 
-  const handleProfileUpdate = useCallback((profileData) => {
+  const handleProfileUpdate = useCallback(async (profileData) => {
     setUserProfile(profileData);
-  }, []);
+    
+    // Update the user's name and emoji in all trips they belong to
+    try {
+      const tripsQuery = query(
+        collection(db, 'trips'),
+        where('memberEmails', 'array-contains', user.email)
+      );
+      const tripsSnapshot = await getDocs(tripsQuery);
+      
+      for (const tripDoc of tripsSnapshot.docs) {
+        const tripData = tripDoc.data();
+        const updatedMembers = (tripData.members || []).map(m => 
+          m.email === user.email 
+            ? { ...m, name: profileData.displayName, emoji: profileData.emoji }
+            : m
+        );
+        
+        await updateDoc(doc(db, 'trips', tripDoc.id), { members: updatedMembers });
+      }
+      
+      console.log(`Updated profile in ${tripsSnapshot.docs.length} trips`);
+    } catch (error) {
+      console.error('Error syncing profile to trips:', error);
+    }
+  }, [user?.email]);
 
   const handleCreateTrip = useCallback(async (tripData) => {
     setIsLoading(true);
@@ -332,7 +356,7 @@ export default function App() {
           Moneybillcounter
         </h1>
         <div
-          onClick={() => { setActiveTab('profile'); setView('home'); setCurrentTrip(null); }}
+          onClick={() => { setActiveTab('profile'); setView('home'); setActiveTrip(null); }}
           className="w-10 h-10 rounded-full overflow-hidden border-2 border-indigo-100 shadow-sm flex items-center justify-center text-2xl bg-white cursor-pointer hover:scale-105 transition-transform"
         >
           {userProfile?.emoji || (user?.photo ? <img src={user.photo} alt={user.name} className="w-full h-full object-cover" /> : '👤')}
