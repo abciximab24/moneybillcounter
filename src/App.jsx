@@ -285,16 +285,40 @@ export default function App() {
   const handleSaveExpense = useCallback(async (expenseData) => {
     setIsLoading(true);
     try {
-      // Create a name-to-email mapping from trip members for future reference
+      if (!activeTrip?.members) return;
+      
+      // Build email-to-member mapping for reliable lookup
+      const emailToMember = {};
+      activeTrip.members.forEach(m => {
+        if (m.email) emailToMember[m.email] = m;
+      });
+      
+      // Resolve payer: find trip member by user email, ensure correct name
+      const currentPayerMember = emailToMember[user?.email];
+      const payerName = currentPayerMember?.name || expenseData.payer;
+      
+      // Resolve splitWith members: find each by name in current trip members, use correct names
+      const resolvedSplitWith = (expenseData.splitWith || []).map(name => {
+        const member = activeTrip.members.find(m => m.name === name);
+        return member ? member.name : name;
+      });
+
+      // Build memberEmails from resolved trip member names
       const memberEmails = {};
-      if (activeTrip?.members) {
-        activeTrip.members.forEach(m => {
-          memberEmails[m.name] = m.email;
-        });
-      }
+      activeTrip.members.forEach(m => {
+        if (m.name && m.email) memberEmails[m.name] = m.email;
+      });
+      
+      const payerEmail = user?.email || memberEmails[payerName];
+      const splitWithEmails = resolvedSplitWith.map(name => memberEmails[name]);
+      
       await addDoc(collection(db, 'expenses'), {
         ...expenseData,
-        memberEmails // Snapshot of who each person was at time of expense
+        payer: payerName,
+        splitWith: resolvedSplitWith,
+        memberEmails,
+        payerEmail,
+        splitWithEmails
       });
       showToast('Expense logged!', 'success');
       setShowAddExpense(false);
@@ -304,7 +328,7 @@ export default function App() {
     } finally {
       setIsLoading(false);
     }
-  }, [showToast, activeTrip]);
+  }, [showToast, activeTrip, user]);
 
   const handleDeleteExpense = useCallback(async (expenseId) => {
     if (!confirm('Delete this expense?')) return;

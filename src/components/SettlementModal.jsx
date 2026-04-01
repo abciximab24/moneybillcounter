@@ -43,17 +43,23 @@ export default function SettlementModal({ trip, expenses, exchangeRates, onClose
     if (!expenses || !Array.isArray(expenses)) return balances;
     expenses.forEach(expense => {
       if (!expense || typeof expense !== 'object') return;
-      if (!expense.splitWith || !Array.isArray(expense.splitWith) || expense.splitWith.length === 0) return;
+      
+      // Skip expenses with no split members
+      const splitList = expense.splitWith || [];
+      if (!Array.isArray(splitList) || splitList.length === 0) return;
       
       const rate = exchangeRates[expense.currency] || 1;
       const amountInBase = expense.amount * rate;
-      const share = amountInBase / expense.splitWith.length;
+      const share = amountInBase / splitList.length;
 
-      // memberEmails is the snapshot of name->email at expense creation time
+      // Resolution order: 1) explicit email fields (newest) 2) memberEmails mapping (old) 3) name fallback
       const memberEmails = expense.memberEmails || {};
       
-      // Resolve payer email from snapshot, then look up current member
-      let payerEmail = memberEmails[expense.payer];
+      // Use explicit payerEmail if available (new expenses), otherwise resolve via mapping or name
+      let payerEmail = expense.payerEmail;
+      if (!payerEmail) {
+        payerEmail = memberEmails[expense.payer];
+      }
       if (!payerEmail) {
         const currentMember = trip.members.find(m => m.name === expense.payer);
         payerEmail = currentMember?.email;
@@ -63,17 +69,26 @@ export default function SettlementModal({ trip, expenses, exchangeRates, onClose
         balances[payerEmail].amount += amountInBase;
       }
 
-      // Resolve split participants by email
-      expense.splitWith.forEach(name => {
-        let email = memberEmails[name];
-        if (!email) {
-          const currentMember = trip.members.find(m => m.name === name);
-          email = currentMember?.email;
-        }
-        if (email && balances[email]) {
-          balances[email].amount -= share;
-        }
-      });
+      // Resolve split participants: use explicit splitWithEmails if available, otherwise map names
+      if (expense.splitWithEmails && Array.isArray(expense.splitWithEmails)) {
+        expense.splitWithEmails.forEach(email => {
+          if (email && balances[email]) {
+            balances[email].amount -= share;
+          }
+        });
+      } else {
+        // Fallback: resolve via memberEmails mapping or name
+        splitList.forEach(name => {
+          let email = memberEmails[name];
+          if (!email) {
+            const currentMember = trip.members.find(m => m.name === name);
+            email = currentMember?.email;
+          }
+          if (email && balances[email]) {
+            balances[email].amount -= share;
+          }
+        });
+      }
     });
 
     return balances;

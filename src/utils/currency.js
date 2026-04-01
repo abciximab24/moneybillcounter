@@ -30,10 +30,11 @@ export const fetchExchangeRates = async () => {
     const response = await fetch('https://api.exchangerate-api.com/v4/latest/HKD');
     const data = await response.json();
     
+    // API returns 1 HKD = X TWD, but we need 1 TWD = X HKD for conversion
     cachedRates = {
       HKD: 1,
-      TWD: data.rates.TWD || FALLBACK_RATES.TWD,
-      JPY: data.rates.JPY || FALLBACK_RATES.JPY
+      TWD: (1 / data.rates.TWD) || FALLBACK_RATES.TWD,
+      JPY: (1 / data.rates.JPY) || FALLBACK_RATES.JPY
     };
     
     lastFetchTime = now;
