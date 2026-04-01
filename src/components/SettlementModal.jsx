@@ -20,7 +20,7 @@ export default function SettlementModal({ trip, expenses, exchangeRates, onClose
       const loaded = snapshot.docs.map(d => ({
         id: d.id,
         ...d.data(),
-        settlementKey: `${d.data().from}-${d.data().to}`
+        settlementKey: `${d.data().fromEmail || ''}-${d.data().toEmail || ''}`
       }));
       setSettledDebts(loaded);
     }, (error) => {
@@ -30,13 +30,15 @@ export default function SettlementModal({ trip, expenses, exchangeRates, onClose
     return unsubscribe;
   }, [trip.id]);
 
-  // Calculate balances using name-to-email resolution
-  // If name changed since expense was created, memberEmails snapshot resolves the original name
+  // Calculate balances using EMAIL as dictionary keys - only convert to name for UI
   const calculateBalances = useCallback(() => {
-    const balances = {};
+    const balances = {}; // Keyed by EMAIL
     if (!trip.members || !Array.isArray(trip.members)) return balances;
-    // Initialize balances keyed by current name (for display)
-    trip.members.forEach(m => { balances[m.name] = 0; });
+    
+    // Initialize balances keyed by email (immutable identity)
+    trip.members.forEach(m => { 
+      if (m.email) balances[m.email] = { email: m.email, amount: 0 }; 
+    });
 
     if (!expenses || !Array.isArray(expenses)) return balances;
     expenses.forEach(expense => {
@@ -50,30 +52,26 @@ export default function SettlementModal({ trip, expenses, exchangeRates, onClose
       // memberEmails is the snapshot of name->email at expense creation time
       const memberEmails = expense.memberEmails || {};
       
-      // Resolve payer email from snapshot, then find current name for that email
+      // Resolve payer email from snapshot, then look up current member
       let payerEmail = memberEmails[expense.payer];
       if (!payerEmail) {
         const currentMember = trip.members.find(m => m.name === expense.payer);
         payerEmail = currentMember?.email;
       }
-      // Find the current name for this email
-      const payerMember = trip.members.find(m => m.email === payerEmail);
-      const currentPayerName = payerMember?.name;
-      if (currentPayerName && balances[currentPayerName] !== undefined) {
-        balances[currentPayerName] += amountInBase;
+      
+      if (payerEmail && balances[payerEmail]) {
+        balances[payerEmail].amount += amountInBase;
       }
 
-      // Resolve split participants by email, then find current name
+      // Resolve split participants by email
       expense.splitWith.forEach(name => {
         let email = memberEmails[name];
         if (!email) {
           const currentMember = trip.members.find(m => m.name === name);
           email = currentMember?.email;
         }
-        const splitMember = trip.members.find(m => m.email === email);
-        const currentName = splitMember?.name;
-        if (currentName && balances[currentName] !== undefined) {
-          balances[currentName] -= share;
+        if (email && balances[email]) {
+          balances[email].amount -= share;
         }
       });
     });
@@ -81,19 +79,31 @@ export default function SettlementModal({ trip, expenses, exchangeRates, onClose
     return balances;
   }, [trip.members, expenses, exchangeRates]);
 
-  // Calculate optimal settlements with unique keys
+  // Helper: get current name for email
+  const getNameForEmail = useCallback((email) => {
+    const member = trip.members.find(m => m.email === email);
+    return member?.name || email;
+  }, [trip.members]);
+
+  // Helper: get emoji for email
+  const getEmojiForEmail = useCallback((email) => {
+    const member = trip.members.find(m => m.email === email);
+    return member?.emoji || '👤';
+  }, [trip.members]);
+
+  // Calculate settlements using EMAIL
   const calculateSettlements = useCallback(() => {
-    const balances = calculateBalances();
+    const emailBalances = calculateBalances();
     const settlements = [];
 
     const debtors = [];
     const creditors = [];
 
-    Object.entries(balances).forEach(([name, balance]) => {
-      if (balance < -0.01) {
-        debtors.push({ name, amount: Math.abs(balance) });
-      } else if (balance > 0.01) {
-        creditors.push({ name, amount: balance });
+    Object.values(emailBalances).forEach(({ email, amount }) => {
+      if (amount < -0.01) {
+        debtors.push({ email, amount: Math.abs(amount) });
+      } else if (amount > 0.01) {
+        creditors.push({ email, amount });
       }
     });
 
@@ -109,14 +119,14 @@ export default function SettlementModal({ trip, expenses, exchangeRates, onClose
       const amount = Math.min(debtor.amount, creditor.amount);
 
       if (amount > 0.01) {
-        const settlementKey = `${debtor.name}-${creditor.name}`;
+        const settlementKey = `${debtor.email}-${creditor.email}`;
         const existingSettlement = settledDebts.find(s => s.settlementKey === settlementKey);
         
         settlements.push({
-          key: `${debtor.name}-${creditor.name}-${Date.now()}`, // Unique key for React rendering
+          key: `${debtor.email}-${creditor.email}-${Date.now()}`,
           settlementKey,
-          from: debtor.name,
-          to: creditor.name,
+          fromEmail: debtor.email,
+          toEmail: creditor.email,
           amount,
           isSettled: !!existingSettlement,
           firestoreId: existingSettlement?.id
@@ -135,10 +145,8 @@ export default function SettlementModal({ trip, expenses, exchangeRates, onClose
 
   const handleSettleIndividual = async (settlement) => {
     if (settlement.isSettled) {
-      // Undo settlement
       await handleUndoSettlement(settlement);
     } else {
-      // Mark as settled
       await handleMarkSettled(settlement);
     }
   };
@@ -148,8 +156,8 @@ export default function SettlementModal({ trip, expenses, exchangeRates, onClose
     try {
       const settlementData = {
         tripId: trip.id,
-        from: settlement.from,
-        to: settlement.to,
+        fromEmail: settlement.fromEmail,
+        toEmail: settlement.toEmail,
         amount: settlement.amount,
         currency: trip.baseCurrency,
         settledAt: Date.now()
@@ -183,24 +191,20 @@ export default function SettlementModal({ trip, expenses, exchangeRates, onClose
     }
   };
 
-  // Memoized member emoji lookup - moved before regular function calls (hooks must be called first)
-  const getMemberEmoji = useCallback((name) => {
-    return trip.members.find(m => m.name === name)?.emoji || '👤';
-  }, [trip.members]);
-
   const balances = calculateBalances();
   const settlements = calculateSettlements();
 
-  // Filter settlements
-  const filteredSettlements = filterMember === 'all' 
+  // Filter by member email
+  const filterEmail = trip.members.find(m => m.name === filterMember)?.email || 'all';
+  const filteredSettlements = filterEmail === 'all' 
     ? settlements 
-    : settlements.filter(s => s.from === filterMember || s.to === filterMember);
+    : settlements.filter(s => s.fromEmail === filterEmail || s.toEmail === filterEmail);
 
   // Get unique members for filter
   const memberNames = trip.members.map(m => m.name);
 
   // Count settled
-  const settledCount = settledDebts.length;
+  const settledCount = settlements.filter(s => s.isSettled).length;
   const totalCount = settlements.length;
 
   return (
@@ -243,13 +247,13 @@ export default function SettlementModal({ trip, expenses, exchangeRates, onClose
       {/* Balances */}
       <div className="mb-8">
         <h3 className="text-lg font-bold text-slate-500 mb-4">Individual Balances</h3>
-        {Object.entries(balances).map(([name, balance]) => (
-          <div key={name} className="flex justify-between items-center p-6 bg-slate-50 rounded-[32px] mb-4">
+        {Object.values(balances).map(({ email, amount }) => (
+          <div key={email} className="flex justify-between items-center p-6 bg-slate-50 rounded-[32px] mb-4">
             <span className="font-bold flex items-center gap-2">
-              {getMemberEmoji(name)} {name}
+              {getEmojiForEmail(email)} {getNameForEmail(email)}
             </span>
-            <span className={`font-black text-xl ${balance >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
-              {balance >= 0 ? '+' : ''}{formatCurrency(balance, trip.baseCurrency)}
+            <span className={`font-black text-xl ${amount >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
+              {amount >= 0 ? '+' : ''}{formatCurrency(amount, trip.baseCurrency)}
             </span>
           </div>
         ))}
@@ -268,11 +272,11 @@ export default function SettlementModal({ trip, expenses, exchangeRates, onClose
             >
               <div className="flex-1">
                 <p className={`font-bold ${s.isSettled ? 'text-emerald-600' : 'text-indigo-600'}`}>
-                  {getMemberEmoji(s.from)} {s.from}
+                  {getEmojiForEmail(s.fromEmail)} {getNameForEmail(s.fromEmail)}
                 </p>
                 <p className="text-xs text-slate-500">pays</p>
                 <p className={`font-bold ${s.isSettled ? 'text-emerald-600' : 'text-emerald-600'}`}>
-                  {getMemberEmoji(s.to)} {s.to}
+                  {getEmojiForEmail(s.toEmail)} {getNameForEmail(s.toEmail)}
                 </p>
               </div>
               <div className="text-right">
