@@ -109,6 +109,9 @@ export default function AddExpenseModal({ trip, user, onClose, onSave, isLoading
     let splitWith = selectedMembers;
     if (splitMode === 'all') {
       splitWith = trip.members.map(m => m.name);
+    } else if (splitMode === 'exclude') {
+      // selectedMembers contains members to EXCLUDE
+      splitWith = trip.members.map(m => m.name).filter(n => !selectedMembers.includes(n));
     }
     
     return {
