@@ -24,9 +24,6 @@ export default function EditExpenseModal({ expense, trip, onClose, onUpdated, sh
     let splitWith = selectedMembers;
     if (splitMode === 'all') {
       splitWith = trip.members.map(m => m.name);
-    } else if (splitMode === 'exclude') {
-      // selectedMembers contains members to EXCLUDE
-      splitWith = trip.members.map(m => m.name).filter(n => !selectedMembers.includes(n));
     }
 
     setIsLoading(true);
@@ -63,9 +60,6 @@ export default function EditExpenseModal({ expense, trip, onClose, onUpdated, sh
     let splitWith = selectedMembers;
     if (splitMode === 'all') {
       splitWith = trip.members.map(m => m.name);
-    } else if (splitMode === 'exclude') {
-      // selectedMembers contains members to EXCLUDE
-      splitWith = trip.members.map(m => m.name).filter(n => !selectedMembers.includes(n));
     }
     
     if (splitWith.length === 0 || numAmount <= 0) return null;
@@ -145,20 +139,12 @@ export default function EditExpenseModal({ expense, trip, onClose, onUpdated, sh
               All
             </button>
             <button
-              onClick={() => setSplitMode('specific')}
+              onClick={() => setSplitMode('select')}
               className={`px-4 py-2 rounded-xl text-sm font-bold transition-all ${
-                splitMode === 'specific' ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-600'
+                splitMode === 'select' ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-600'
               }`}
             >
-              Specific
-            </button>
-            <button
-              onClick={() => setSplitMode('exclude')}
-              className={`px-4 py-2 rounded-xl text-sm font-bold transition-all ${
-                splitMode === 'exclude' ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-600'
-              }`}
-            >
-              Exclude
+              Select
             </button>
           </div>
 
@@ -169,8 +155,7 @@ export default function EditExpenseModal({ expense, trip, onClose, onUpdated, sh
                   key={member.name}
                   onClick={() => toggleMember(member.name)}
                   className={`px-3 py-2 rounded-xl text-sm font-bold transition-all ${
-                    (splitMode === 'specific' && selectedMembers.includes(member.name)) ||
-                    (splitMode === 'exclude' && !selectedMembers.includes(member.name))
+                    selectedMembers.includes(member.name)
                       ? 'bg-indigo-600 text-white'
                       : 'bg-slate-100 text-slate-600'
                   }`}

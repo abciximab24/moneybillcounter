@@ -19,7 +19,7 @@ export default function AddExpenseModal({ trip, user, onClose, onSave, isLoading
   const [manualAmount, setManualAmount] = useState('');
   const [manualDesc, setManualDesc] = useState('');
   const [selectedPayer, setSelectedPayer] = useState(user.name);
-  const [splitMode, setSplitMode] = useState('all'); // 'all', 'specific', 'exclude'
+  const [splitMode, setSplitMode] = useState('all'); // 'all', 'select'
   const [selectedMembers, setSelectedMembers] = useState(trip.members.map(m => m.name));
   const [useMagicMode, setUseMagicMode] = useState(true);
 
@@ -109,9 +109,6 @@ export default function AddExpenseModal({ trip, user, onClose, onSave, isLoading
     let splitWith = selectedMembers;
     if (splitMode === 'all') {
       splitWith = trip.members.map(m => m.name);
-    } else if (splitMode === 'exclude') {
-      // selectedMembers contains members to EXCLUDE
-      splitWith = trip.members.map(m => m.name).filter(n => !selectedMembers.includes(n));
     }
     
     return {
@@ -279,20 +276,12 @@ export default function AddExpenseModal({ trip, user, onClose, onSave, isLoading
                   All
                 </button>
                 <button
-                  onClick={() => setSplitMode('specific')}
+                  onClick={() => setSplitMode('select')}
                   className={`px-4 py-2 rounded-xl text-sm font-bold transition-all ${
-                    splitMode === 'specific' ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-600'
+                    splitMode === 'select' ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-600'
                   }`}
                 >
-                  Specific
-                </button>
-                <button
-                  onClick={() => setSplitMode('exclude')}
-                  className={`px-4 py-2 rounded-xl text-sm font-bold transition-all ${
-                    splitMode === 'exclude' ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-600'
-                  }`}
-                >
-                  Exclude
+                  Select
                 </button>
               </div>
 
@@ -303,8 +292,7 @@ export default function AddExpenseModal({ trip, user, onClose, onSave, isLoading
                       key={member.name}
                       onClick={() => toggleMember(member.name)}
                       className={`px-3 py-2 rounded-xl text-sm font-bold transition-all ${
-                        (splitMode === 'specific' && selectedMembers.includes(member.name)) ||
-                        (splitMode === 'exclude' && !selectedMembers.includes(member.name))
+                        selectedMembers.includes(member.name)
                           ? 'bg-indigo-600 text-white'
                           : 'bg-slate-100 text-slate-600'
                       }`}
