@@ -3,11 +3,13 @@ import { X, ArrowRightLeft, Check, Filter, Undo2 } from 'lucide-react';
 import { formatCurrency } from '../utils/currency';
 import { collection, addDoc, deleteDoc, doc, query, where, onSnapshot } from 'firebase/firestore';
 import { db } from '../App';
+import PartialSettlementModal from './PartialSettlementModal';
 
 export default function SettlementModal({ trip, expenses, exchangeRates, onClose, showToast }) {
   const [settledDebts, setSettledDebts] = useState([]);
   const [filterMember, setFilterMember] = useState('all');
   const [isLoading, setIsLoading] = useState(false);
+  const [partialSettlementTarget, setPartialSettlementTarget] = useState(null);
 
   // Load existing settlements from Firestore
   useEffect(() => {
@@ -29,6 +31,16 @@ export default function SettlementModal({ trip, expenses, exchangeRates, onClose
 
     return unsubscribe;
   }, [trip.id]);
+
+  // Calculate cumulative settled amount per fromEmail-toEmail pair
+  const getCumulativeSettled = useCallback(() => {
+    const cumulative = {};
+    settledDebts.forEach(s => {
+      const key = s.settlementKey;
+      cumulative[key] = (cumulative[key] || 0) + (s.amount || 0);
+    });
+    return cumulative;
+  }, [settledDebts]);
 
   // Calculate balances using EMAIL as dictionary keys - only convert to name for UI
   const calculateBalances = useCallback(() => {
@@ -126,30 +138,40 @@ export default function SettlementModal({ trip, expenses, exchangeRates, onClose
     debtors.sort((a, b) => b.amount - a.amount);
     creditors.sort((a, b) => b.amount - a.amount);
 
+    const cumulativeSettled = getCumulativeSettled();
+
     // Match debtors with creditors
     let i = 0, j = 0;
     while (i < debtors.length && j < creditors.length) {
       const debtor = debtors[i];
       const creditor = creditors[j];
-      const amount = Math.min(debtor.amount, creditor.amount);
+      const totalOwed = Math.min(debtor.amount, creditor.amount);
 
-      if (amount > 0.01) {
+      if (totalOwed > 0.01) {
         const settlementKey = `${debtor.email}-${creditor.email}`;
-        const existingSettlement = settledDebts.find(s => s.settlementKey === settlementKey);
-        
+        const alreadyPaid = cumulativeSettled[settlementKey] || 0;
+        const remaining = Math.max(0, totalOwed - alreadyPaid);
+        const isFullySettled = remaining < 0.01;
+
+        // Get all settlement docs for this pair (for undo)
+        const pairSettlements = settledDebts.filter(s => s.settlementKey === settlementKey);
+
         settlements.push({
           key: `${debtor.email}-${creditor.email}-${Date.now()}`,
           settlementKey,
           fromEmail: debtor.email,
           toEmail: creditor.email,
-          amount,
-          isSettled: !!existingSettlement,
-          firestoreId: existingSettlement?.id
+          totalAmount: totalOwed,
+          settledAmount: alreadyPaid,
+          remainingAmount: remaining,
+          amount: remaining,
+          isSettled: isFullySettled,
+          pairSettlements
         });
       }
 
-      debtor.amount -= amount;
-      creditor.amount -= amount;
+      debtor.amount -= totalOwed;
+      creditor.amount -= totalOwed;
 
       if (debtor.amount < 0.01) i++;
       if (creditor.amount < 0.01) j++;
@@ -162,45 +184,51 @@ export default function SettlementModal({ trip, expenses, exchangeRates, onClose
     if (settlement.isSettled) {
       await handleUndoSettlement(settlement);
     } else {
-      await handleMarkSettled(settlement);
+      setPartialSettlementTarget(settlement);
     }
   };
 
-  const handleMarkSettled = async (settlement) => {
+  const handleConfirmPartial = async (amount) => {
+    if (!partialSettlementTarget) return;
     setIsLoading(true);
     try {
       const settlementData = {
         tripId: trip.id,
-        fromEmail: settlement.fromEmail,
-        toEmail: settlement.toEmail,
-        amount: settlement.amount,
+        fromEmail: partialSettlementTarget.fromEmail,
+        toEmail: partialSettlementTarget.toEmail,
+        amount: amount,
         currency: trip.baseCurrency,
         settledAt: Date.now()
       };
 
       await addDoc(collection(db, 'settlements'), settlementData);
-      showToast(`Marked ${formatCurrency(settlement.amount, trip.baseCurrency)} as settled!`, 'success');
+      showToast(`Paid ${formatCurrency(amount, trip.baseCurrency)}!`, 'success');
+      setPartialSettlementTarget(null);
     } catch (error) {
       console.error('Settlement error:', error);
-      showToast('Failed to mark as settled', 'error');
+      showToast('Failed to record payment', 'error');
     } finally {
       setIsLoading(false);
     }
   };
 
   const handleUndoSettlement = async (settlement) => {
-    if (!settlement.firestoreId) {
-      showToast('Cannot undo - settlement not found', 'error');
+    if (!settlement.pairSettlements || settlement.pairSettlements.length === 0) {
+      showToast('No settlements to undo', 'error');
       return;
     }
 
     setIsLoading(true);
     try {
-      await deleteDoc(doc(db, 'settlements', settlement.firestoreId));
-      showToast('Settlement undone!', 'success');
+      // Delete the most recent settlement for this pair
+      const latest = settlement.pairSettlements.sort((a, b) => (b.settledAt || 0) - (a.settledAt || 0))[0];
+      if (latest?.id) {
+        await deleteDoc(doc(db, 'settlements', latest.id));
+        showToast('Last payment undone!', 'success');
+      }
     } catch (error) {
       console.error('Undo error:', error);
-      showToast('Failed to undo settlement', 'error');
+      showToast('Failed to undo payment', 'error');
     } finally {
       setIsLoading(false);
     }
@@ -278,45 +306,63 @@ export default function SettlementModal({ trip, expenses, exchangeRates, onClose
       {filteredSettlements.length > 0 ? (
         <div>
           <h3 className="text-lg font-bold text-slate-500 mb-4">Who Pays Whom</h3>
-          {filteredSettlements.map((s) => (
-            <div 
-              key={s.key} 
-              className={`flex items-center gap-4 p-6 rounded-[32px] mb-4 transition-all ${
-                s.isSettled ? 'bg-emerald-50 border-2 border-emerald-200' : 'bg-indigo-50'
-              }`}
-            >
-              <div className="flex-1">
-                <p className={`font-bold ${s.isSettled ? 'text-emerald-600' : 'text-indigo-600'}`}>
-                  {getEmojiForEmail(s.fromEmail)} {getNameForEmail(s.fromEmail)}
-                </p>
-                <p className="text-xs text-slate-500">pays</p>
-                <p className={`font-bold ${s.isSettled ? 'text-emerald-600' : 'text-emerald-600'}`}>
-                  {getEmojiForEmail(s.toEmail)} {getNameForEmail(s.toEmail)}
-                </p>
-              </div>
-              <div className="text-right">
-                <p className={`font-black text-2xl ${s.isSettled ? 'text-emerald-500' : 'text-indigo-600'}`}>
-                  {formatCurrency(s.amount, trip.baseCurrency)}
-                </p>
-                {s.isSettled && (
-                  <p className="text-xs text-emerald-500 font-bold mt-1">✓ Settled</p>
+          {filteredSettlements.map((s) => {
+            const progress = s.totalAmount > 0 ? (s.settledAmount / s.totalAmount) * 100 : 0;
+            return (
+              <div 
+                key={s.key} 
+                className={`p-6 rounded-[32px] mb-4 transition-all ${
+                  s.isSettled ? 'bg-emerald-50 border-2 border-emerald-200' : 'bg-indigo-50'
+                }`}
+              >
+                <div className="flex items-center gap-4">
+                  <div className="flex-1">
+                    <p className={`font-bold ${s.isSettled ? 'text-emerald-600' : 'text-indigo-600'}`}>
+                      {getEmojiForEmail(s.fromEmail)} {getNameForEmail(s.fromEmail)}
+                    </p>
+                    <p className="text-xs text-slate-500">pays</p>
+                    <p className="font-bold text-emerald-600">
+                      {getEmojiForEmail(s.toEmail)} {getNameForEmail(s.toEmail)}
+                    </p>
+                  </div>
+                  <div className="text-right">
+                    <p className={`font-black text-2xl ${s.isSettled ? 'text-emerald-500' : 'text-indigo-600'}`}>
+                      {formatCurrency(s.remainingAmount, trip.baseCurrency)}
+                    </p>
+                    {s.isSettled ? (
+                      <p className="text-xs text-emerald-500 font-bold mt-1">✓ Settled</p>
+                    ) : s.settledAmount > 0 ? (
+                      <p className="text-xs text-amber-600 font-bold mt-1">
+                        {formatCurrency(s.settledAmount, trip.baseCurrency)} paid
+                      </p>
+                    ) : null}
+                  </div>
+                  <button
+                    onClick={() => handleSettleIndividual(s)}
+                    disabled={isLoading}
+                    className={`p-3 rounded-2xl transition-colors ${
+                      s.isSettled 
+                        ? 'bg-amber-500 text-white hover:bg-amber-600' 
+                        : 'bg-emerald-500 text-white hover:bg-emerald-600'
+                    } disabled:opacity-50`}
+                    aria-label={s.isSettled ? 'Undo settlement' : 'Settle payment'}
+                    title={s.isSettled ? 'Undo last payment' : 'Settle payment'}
+                  >
+                    {s.isSettled ? <Undo2 size={20} /> : <Check size={20} />}
+                  </button>
+                </div>
+                {/* Progress bar for partial settlements */}
+                {!s.isSettled && s.settledAmount > 0 && (
+                  <div className="mt-3 bg-white/60 rounded-full h-2 overflow-hidden">
+                    <div 
+                      className="bg-emerald-500 h-full transition-all duration-500"
+                      style={{ width: `${progress}%` }}
+                    />
+                  </div>
                 )}
               </div>
-              <button
-                onClick={() => handleSettleIndividual(s)}
-                disabled={isLoading}
-                className={`p-3 rounded-2xl transition-colors ${
-                  s.isSettled 
-                    ? 'bg-amber-500 text-white hover:bg-amber-600' 
-                    : 'bg-emerald-500 text-white hover:bg-emerald-600'
-                } disabled:opacity-50`}
-                aria-label={s.isSettled ? 'Undo settlement' : 'Mark as settled'}
-                title={s.isSettled ? 'Undo settlement' : 'Mark as settled'}
-              >
-                {s.isSettled ? <Undo2 size={20} /> : <Check size={20} />}
-              </button>
-            </div>
-          ))}
+            );
+          })}
         </div>
       ) : (
         <div className="text-center py-12">
@@ -350,6 +396,18 @@ export default function SettlementModal({ trip, expenses, exchangeRates, onClose
           </div>
         )}
       </div>
+
+      {/* Partial Settlement Modal */}
+      {partialSettlementTarget && (
+        <PartialSettlementModal
+          settlement={partialSettlementTarget}
+          remainingAmount={partialSettlementTarget.remainingAmount}
+          baseCurrency={trip.baseCurrency}
+          onConfirm={handleConfirmPartial}
+          onClose={() => setPartialSettlementTarget(null)}
+          isLoading={isLoading}
+        />
+      )}
     </div>
   );
 }
