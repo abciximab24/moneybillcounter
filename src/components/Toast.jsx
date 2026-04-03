@@ -19,7 +19,7 @@ const TOAST_TYPES = {
   }
 };
 
-export default function Toast({ message, type = 'info', onClose, duration = 3000 }) {
+export default function Toast({ message, type = 'info', onClose, duration = 1500 }) {
   const [isVisible, setIsVisible] = useState(true);
   const config = TOAST_TYPES[type] || TOAST_TYPES.info;
   const Icon = config.icon;
@@ -71,7 +71,7 @@ export default function Toast({ message, type = 'info', onClose, duration = 3000
 export function useToast() {
   const [toasts, setToasts] = useState([]);
 
-  const showToast = (message, type = 'info', duration = 4000) => {
+  const showToast = (message, type = 'info', duration = 1500) => {
     const id = Date.now() + Math.random();
     setToasts(prev => [...prev, { id, message, type, duration }]);
   };

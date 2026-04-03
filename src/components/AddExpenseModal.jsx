@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { X, Sparkles, Plane, Utensils, Landmark, ShoppingBag, Car, Home, MoreHorizontal } from 'lucide-react';
+import { X, Sparkles, Plane, Utensils, Landmark, ShoppingBag, Car, Home, MoreHorizontal, Loader2 } from 'lucide-react';
 import { CURRENCIES, parseCurrencyFromText } from '../utils/currency';
 
 const CATEGORIES = [
@@ -160,9 +160,15 @@ export default function AddExpenseModal({ trip, user, onClose, onSave, isLoading
 
   const splitPreview = getSplitPreview();
 
+  const handleBackdropClick = (e) => {
+    if (e.target === e.currentTarget) {
+      onClose();
+    }
+  };
+
   return (
-    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[50] flex items-end">
-      <div className="bg-white w-full max-w-md mx-auto rounded-t-[48px] p-8 pb-12 animate-in slide-in-from-bottom duration-300 max-h-[90vh] overflow-y-auto">
+    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[50] flex items-end" onClick={handleBackdropClick}>
+      <div className="bg-white w-full max-w-md mx-auto rounded-t-[48px] p-8 pb-12 max-h-[90vh] overflow-y-auto">
         {/* Header */}
         <div className="flex justify-between items-center mb-6">
           <h2 className="text-xl font-black italic">Log Expense</h2>
@@ -354,8 +360,9 @@ export default function AddExpenseModal({ trip, user, onClose, onSave, isLoading
             expenseToSave.splitWith.length === 0
           }
           title={(!expenseToSave || !Array.isArray(expenseToSave.splitWith) || expenseToSave.splitWith.length === 0) ? 'Select at least one person to split with' : ''}
-          className="w-full bg-slate-900 text-white py-5 rounded-3xl font-black uppercase tracking-widest disabled:opacity-50 disabled:cursor-not-allowed"
+          className="w-full bg-slate-900 text-white py-5 rounded-3xl font-black uppercase tracking-widest disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
         >
+          {isLoading && <Loader2 size={20} className="animate-spin" />}
           {isLoading ? 'Saving...' : 'Confirm & Save'}
         </button>
       </div>

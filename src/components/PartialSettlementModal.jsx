@@ -33,9 +33,15 @@ export default function PartialSettlementModal({
   const isValid = !isNaN(parsedAmount) && parsedAmount > 0 && parsedAmount <= remainingAmount;
   const isFullPayment = isValid && Math.abs(parsedAmount - remainingAmount) < 0.01;
 
+  const handleBackdropClick = (e) => {
+    if (e.target === e.currentTarget) {
+      onClose();
+    }
+  };
+
   return (
-    <div className="fixed inset-0 bg-black/40 z-[70] flex items-end justify-center">
-      <div className="bg-white w-full max-w-md rounded-t-[32px] p-8 slide-in-from-bottom animate-in">
+    <div className="fixed inset-0 bg-black/40 z-[70] flex items-end justify-center" onClick={handleBackdropClick}>
+      <div className="bg-white w-full max-w-md rounded-t-[32px] p-8">
         <div className="flex justify-between items-center mb-6">
           <h3 className="text-2xl font-black italic">Settle Up</h3>
           <button 

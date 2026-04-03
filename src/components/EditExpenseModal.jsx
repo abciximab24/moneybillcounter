@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X } from 'lucide-react';
+import { X, Loader2 } from 'lucide-react';
 import { CURRENCIES } from '../utils/currency';
 import { doc, updateDoc } from 'firebase/firestore';
 import { db } from '../App';
@@ -38,11 +38,11 @@ export default function EditExpenseModal({ expense, trip, onClose, onUpdated, sh
         updatedAt: Date.now()
       });
       showToast('Expense updated', 'success');
+      setIsLoading(false);
       onUpdated();
     } catch (error) {
       console.error('Update error:', error);
       showToast('Failed to update expense', 'error');
-    } finally {
       setIsLoading(false);
     }
   };
@@ -73,9 +73,15 @@ export default function EditExpenseModal({ expense, trip, onClose, onUpdated, sh
 
   const splitPreview = getSplitPreview();
 
+  const handleBackdropClick = (e) => {
+    if (e.target === e.currentTarget) {
+      onClose();
+    }
+  };
+
   return (
-    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[50] flex items-end">
-      <div className="bg-white w-full max-w-md mx-auto rounded-t-[48px] p-8 pb-12 animate-in slide-in-from-bottom duration-300 max-h-[90vh] overflow-y-auto">
+    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[50] flex items-end" onClick={handleBackdropClick}>
+      <div className="bg-white w-full max-w-md mx-auto rounded-t-[48px] p-8 pb-12 max-h-[90vh] overflow-y-auto">
         <div className="flex justify-between items-center mb-6">
           <h2 className="text-xl font-black italic">Edit Expense</h2>
           <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-xl">
@@ -190,8 +196,9 @@ export default function EditExpenseModal({ expense, trip, onClose, onUpdated, sh
           <button
             onClick={handleUpdate}
             disabled={isLoading || !desc.trim() || !amount || parseFloat(amount) <= 0}
-            className="flex-1 bg-slate-900 text-white py-4 rounded-2xl font-black uppercase disabled:opacity-50"
+            className="flex-1 bg-slate-900 text-white py-4 rounded-2xl font-black uppercase disabled:opacity-50 flex items-center justify-center gap-2"
           >
+            {isLoading && <Loader2 size={20} className="animate-spin" />}
             {isLoading ? 'Saving...' : 'Save'}
           </button>
         </div>

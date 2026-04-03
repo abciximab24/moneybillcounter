@@ -203,11 +203,11 @@ export default function SettlementModal({ trip, expenses, exchangeRates, onClose
 
       await addDoc(collection(db, 'settlements'), settlementData);
       showToast(`Paid ${formatCurrency(amount, trip.baseCurrency)}!`, 'success');
+      setIsLoading(false);
       setPartialSettlementTarget(null);
     } catch (error) {
       console.error('Settlement error:', error);
       showToast('Failed to record payment', 'error');
-    } finally {
       setIsLoading(false);
     }
   };
@@ -250,11 +250,18 @@ export default function SettlementModal({ trip, expenses, exchangeRates, onClose
   const settledCount = settlements.filter(s => s.isSettled).length;
   const totalCount = settlements.length;
 
+  const handleBackdropClick = (e) => {
+    if (e.target === e.currentTarget) {
+      onClose();
+    }
+  };
+
   return (
-    <div className="fixed inset-0 bg-white z-[60] p-8 overflow-y-auto">
-      <button onClick={onClose} className="mb-8 p-3 bg-slate-100 rounded-2xl hover:bg-slate-200 transition-colors">
-        <X size={24} />
-      </button>
+    <div className="fixed inset-0 bg-white z-[60] p-8 overflow-y-auto" onClick={handleBackdropClick}>
+      <div>
+        <button onClick={onClose} className="mb-8 p-3 bg-slate-100 rounded-2xl hover:bg-slate-200 transition-colors">
+          <X size={24} />
+        </button>
 
       <h2 className="text-3xl font-black mb-8 italic">Settlements</h2>
 
@@ -408,6 +415,7 @@ export default function SettlementModal({ trip, expenses, exchangeRates, onClose
           isLoading={isLoading}
         />
       )}
+      </div>
     </div>
   );
 }

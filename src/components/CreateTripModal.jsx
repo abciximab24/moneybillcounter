@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X } from 'lucide-react';
+import { X, Loader2 } from 'lucide-react';
 import { CURRENCIES } from '../utils/currency';
 
 export default function CreateTripModal({ user, onClose, onCreate, isLoading }) {
@@ -24,9 +24,15 @@ export default function CreateTripModal({ user, onClose, onCreate, isLoading }) 
     setBaseCurrency('HKD');
   };
 
+  const handleBackdropClick = (e) => {
+    if (e.target === e.currentTarget) {
+      onClose();
+    }
+  };
+
   return (
-    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[50] flex items-end">
-      <div className="bg-white w-full max-w-md mx-auto rounded-t-[48px] p-8 pb-12 animate-in slide-in-from-bottom duration-300">
+    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[50] flex items-end" onClick={handleBackdropClick}>
+      <div className="bg-white w-full max-w-md mx-auto rounded-t-[48px] p-8 pb-12">
         <div className="flex justify-between items-center mb-6">
           <h2 className="text-2xl font-black">New Trip</h2>
           <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-xl">
@@ -68,8 +74,9 @@ export default function CreateTripModal({ user, onClose, onCreate, isLoading }) 
         <button
           onClick={handleCreate}
           disabled={!tripName.trim() || isLoading}
-          className="w-full bg-indigo-600 text-white py-5 rounded-3xl font-black uppercase disabled:opacity-50 disabled:cursor-not-allowed"
+          className="w-full bg-indigo-600 text-white py-5 rounded-3xl font-black uppercase disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
         >
+          {isLoading && <Loader2 size={20} className="animate-spin" />}
           {isLoading ? 'Creating...' : 'Start Adventure'}
         </button>
       </div>

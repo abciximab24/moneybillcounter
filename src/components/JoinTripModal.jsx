@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, Search } from 'lucide-react';
+import { X, Search, Loader2 } from 'lucide-react';
 import { collection, query, where, getDocs, updateDoc, doc, arrayUnion } from 'firebase/firestore';
 import { db } from '../App';
 
@@ -67,9 +67,15 @@ export default function JoinTripModal({ user, onClose, onJoined, showToast }) {
     }
   };
 
+  const handleBackdropClick = (e) => {
+    if (e.target === e.currentTarget) {
+      onClose();
+    }
+  };
+
   return (
-    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[50] flex items-end">
-      <div className="bg-white w-full max-w-md mx-auto rounded-t-[48px] p-8 pb-12 animate-in slide-in-from-bottom duration-300">
+    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[50] flex items-end" onClick={handleBackdropClick}>
+      <div className="bg-white w-full max-w-md mx-auto rounded-t-[48px] p-8 pb-12">
         <div className="flex justify-between items-center mb-6">
           <h2 className="text-2xl font-black">Join Trip</h2>
           <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-xl">
@@ -118,8 +124,9 @@ export default function JoinTripModal({ user, onClose, onJoined, showToast }) {
             <button
               onClick={joinTrip}
               disabled={isLoading}
-              className="w-full mt-4 bg-indigo-600 text-white py-4 rounded-2xl font-black uppercase disabled:opacity-50"
+              className="w-full mt-4 bg-indigo-600 text-white py-4 rounded-2xl font-black uppercase disabled:opacity-50 flex items-center justify-center gap-2"
             >
+              {isLoading && <Loader2 size={20} className="animate-spin" />}
               {isLoading ? 'Joining...' : 'Join This Trip'}
             </button>
           </div>
