@@ -4,6 +4,15 @@ import { CURRENCIES } from '../utils/currency';
 import { doc, updateDoc } from 'firebase/firestore';
 import { db } from '../App';
 
+// Helper: build email mapping from trip members
+const buildMemberEmails = (members) => {
+  const emails = {};
+  (members || []).forEach(m => {
+    if (m.name && m.email) emails[m.name] = m.email;
+  });
+  return emails;
+};
+
 export default function EditExpenseModal({ expense, trip, onClose, onUpdated, showToast }) {
   const safeExpense = expense && typeof expense === 'object' ? expense : {};
   const [desc, setDesc] = useState(safeExpense.desc || '');
@@ -26,6 +35,11 @@ export default function EditExpenseModal({ expense, trip, onClose, onUpdated, sh
       splitWith = trip.members.map(m => m.name);
     }
 
+    // Build email mappings
+    const memberEmails = buildMemberEmails(trip.members);
+    const payerEmail = memberEmails[payer];
+    const splitWithEmails = splitWith.map(name => memberEmails[name]);
+
     setIsLoading(true);
     try {
       await updateDoc(doc(db, 'expenses', expense.id), {
@@ -35,6 +49,8 @@ export default function EditExpenseModal({ expense, trip, onClose, onUpdated, sh
         payer,
         splitWith,
         splitMode,
+        payerEmail,
+        splitWithEmails,
         updatedAt: Date.now()
       });
       showToast('Expense updated', 'success');

@@ -293,9 +293,20 @@ export default function App() {
         if (m.email) emailToMember[m.email] = m;
       });
       
-      // Resolve payer: find trip member by user email, ensure correct name
-      const currentPayerMember = emailToMember[user?.email];
-      const payerName = currentPayerMember?.name || expenseData.payer;
+      // Build memberEmails from resolved trip member names
+      const memberEmails = {};
+      activeTrip.members.forEach(m => {
+        if (m.name && m.email) memberEmails[m.name] = m.email;
+      });
+      
+      // Resolve payer: use the name from the form (selected payer), resolve to current trip member name
+      let payerName = expenseData.payer;
+      const payerByEmail = emailToMember[user?.email];
+      // If form's payer matches a known trip member, use the current trip member's name
+      const matchedPayer = activeTrip.members.find(m => m.name === payerName);
+      if (matchedPayer) {
+        payerName = matchedPayer.name; // Use current name from trip
+      }
       
       // Resolve splitWith members: find each by name in current trip members, use correct names
       const resolvedSplitWith = (expenseData.splitWith || []).map(name => {
@@ -303,13 +314,8 @@ export default function App() {
         return member ? member.name : name;
       });
 
-      // Build memberEmails from resolved trip member names
-      const memberEmails = {};
-      activeTrip.members.forEach(m => {
-        if (m.name && m.email) memberEmails[m.name] = m.email;
-      });
-      
-      const payerEmail = user?.email || memberEmails[payerName];
+      // Get payer's email based on resolved payer NAME (not based on who is logged in!)
+      const payerEmail = memberEmails[payerName] || (payerByEmail?.email);
       const splitWithEmails = resolvedSplitWith.map(name => memberEmails[name]);
       
       await addDoc(collection(db, 'expenses'), {

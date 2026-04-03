@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { X, ArrowRightLeft, Check, Filter, Undo2 } from 'lucide-react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { X, ArrowRightLeft, Check, Filter, Undo2, ArrowUpCircle, ArrowDownCircle, Wallet } from 'lucide-react';
 import { formatCurrency } from '../utils/currency';
 import { collection, addDoc, deleteDoc, doc, query, where, onSnapshot } from 'firebase/firestore';
 import { db } from '../App';
@@ -31,6 +31,53 @@ export default function SettlementModal({ trip, expenses, exchangeRates, onClose
 
     return unsubscribe;
   }, [trip.id]);
+
+  // Calculate per-member breakdown (Paid, Spent, Net)
+  const memberBreakdown = useMemo(() => {
+    const breakdown = {};
+    
+    // Initialize all members - use NAME as key for reliable matching
+    (trip.members || []).forEach(m => {
+      breakdown[m.name] = { 
+        name: m.name,
+        email: m.email,
+        emoji: m.emoji || '👤', 
+        paid: 0,    // Total they paid (in base currency)
+        spent: 0,   // Total their share (in base currency)
+        net: 0      // paid - spent
+      };
+    });
+    
+    // Process each expense
+    (expenses || []).forEach(expense => {
+      if (!expense || typeof expense !== 'object') return;
+      const rate = exchangeRates[expense.currency] || 1;
+      const amountInBase = (expense.amount || 0) * rate;
+      
+      // Use expense.payer NAME directly (this is what was stored when expense was created)
+      const payerName = expense.payer;
+      if (payerName && breakdown[payerName]) {
+        breakdown[payerName].paid += amountInBase;
+      }
+      
+      // Add to each split member's "spent" using their NAME
+      const splitList = expense.splitWith || [];
+      const share = splitList.length > 0 ? amountInBase / splitList.length : 0;
+      
+      splitList.forEach(name => {
+        if (name && breakdown[name]) {
+          breakdown[name].spent += share;
+        }
+      });
+    });
+    
+    // Calculate net for each member
+    Object.values(breakdown).forEach(m => {
+      m.net = m.paid - m.spent;
+    });
+    
+    return Object.values(breakdown);
+  }, [trip.members, expenses, exchangeRates]);
 
   // Calculate cumulative settled amount per fromEmail-toEmail pair
   const getCumulativeSettled = useCallback(() => {
@@ -294,16 +341,59 @@ export default function SettlementModal({ trip, expenses, exchangeRates, onClose
         </div>
       </div>
 
-      {/* Balances */}
+      {/* Member Breakdown */}
+      <div className="mb-8">
+        <h3 className="text-lg font-bold text-slate-500 mb-4 flex items-center gap-2">
+          <Wallet size={18} />
+          Member Breakdown
+        </h3>
+        <div className="bg-white p-4 rounded-2xl border border-slate-100 space-y-3">
+          {memberBreakdown.map(member => (
+            <div key={member.name} className="pb-3 border-b border-slate-100 last:border-b-0 last:pb-0">
+              <div className="flex items-center gap-2 mb-2">
+                <span className="text-2xl">{member.emoji}</span>
+                <span className="font-bold text-sm">{member.name}</span>
+              </div>
+              <div className="grid grid-cols-3 gap-2 text-center">
+                <div className="bg-emerald-50 rounded-xl p-2">
+                  <div className="flex items-center justify-center gap-1 mb-1">
+                    <ArrowUpCircle size={12} className="text-emerald-600" />
+                  </div>
+                  <p className="text-[10px] text-emerald-600 font-bold uppercase">Paid</p>
+                  <p className="text-sm font-black text-emerald-700">{formatCurrency(member.paid, trip.baseCurrency)}</p>
+                </div>
+                <div className="bg-rose-50 rounded-xl p-2">
+                  <div className="flex items-center justify-center gap-1 mb-1">
+                    <ArrowDownCircle size={12} className="text-rose-600" />
+                  </div>
+                  <p className="text-[10px] text-rose-600 font-bold uppercase">Spent</p>
+                  <p className="text-sm font-black text-rose-700">{formatCurrency(member.spent, trip.baseCurrency)}</p>
+                </div>
+                <div className={`rounded-xl p-2 ${member.net >= 0 ? 'bg-indigo-50' : 'bg-amber-50'}`}>
+                  <div className="flex items-center justify-center gap-1 mb-1">
+                    <Wallet size={12} className={member.net >= 0 ? 'text-indigo-600' : 'text-amber-600'} />
+                  </div>
+                  <p className={`text-[10px] font-bold uppercase ${member.net >= 0 ? 'text-indigo-600' : 'text-amber-600'}`}>Net</p>
+                  <p className={`text-sm font-black ${member.net >= 0 ? 'text-indigo-700' : 'text-amber-700'}`}>
+                    {member.net >= 0 ? '+' : ''}{formatCurrency(member.net, trip.baseCurrency)}
+                  </p>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Balances - use same data as memberBreakdown */}
       <div className="mb-8">
         <h3 className="text-lg font-bold text-slate-500 mb-4">Individual Balances</h3>
-        {Object.values(balances).map(({ email, amount }) => (
-          <div key={email} className="flex justify-between items-center p-6 bg-slate-50 rounded-[32px] mb-4">
+        {memberBreakdown.map(member => (
+          <div key={member.name} className="flex justify-between items-center p-6 bg-slate-50 rounded-[32px] mb-4">
             <span className="font-bold flex items-center gap-2">
-              {getEmojiForEmail(email)} {getNameForEmail(email)}
+              {member.emoji} {member.name}
             </span>
-            <span className={`font-black text-xl ${amount >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
-              {amount >= 0 ? '+' : ''}{formatCurrency(amount, trip.baseCurrency)}
+            <span className={`font-black text-xl ${member.net >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
+              {member.net >= 0 ? '+' : ''}{formatCurrency(member.net, trip.baseCurrency)}
             </span>
           </div>
         ))}

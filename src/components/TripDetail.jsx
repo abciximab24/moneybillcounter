@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { ChevronLeft, Plus, Settings, Filter } from 'lucide-react';
+import { ChevronLeft, Plus, Settings, Filter, Download } from 'lucide-react';
 import { formatCurrency } from '../utils/currency';
+import { exportExpensesToCSV } from '../utils/export';
 import ExpenseList from './ExpenseList';
 
 const CATEGORIES = [
@@ -63,13 +64,19 @@ export default function TripDetail({
             <ChevronLeft size={20} />
           </button>
           <h2 className="font-bold flex-1 truncate">{trip.name}</h2>
-          <button
-            onClick={onOpenSettings}
-            className="p-2 bg-white/10 rounded-xl hover:bg-white/20 transition-colors"
-          >
-            <Settings size={20} />
-          </button>
-        </div>
+           <button
+             onClick={onOpenSettings}
+             className="p-2 bg-white/10 rounded-xl hover:bg-white/20 transition-colors"
+           >
+             <Settings size={20} />
+           </button>
+           <button
+             onClick={() => exportExpensesToCSV(expenses, trip, exchangeRates)}
+             className="p-2 bg-white/10 rounded-xl hover:bg-white/20 transition-colors"
+           >
+             <Download size={20} />
+           </button>
+         </div>
 
         <div className="px-4 pb-4">
           <p className="text-[10px] font-black uppercase opacity-60">Group Spending</p>
