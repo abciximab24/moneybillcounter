@@ -157,14 +157,10 @@ export default function App() {
 
     loadTrips();
 
-    // Refresh every 15 seconds
-    const intervalId = setInterval(loadTrips, 15000);
-
     return () => {
       isMounted = false;
-      clearInterval(intervalId);
     };
-  }, [user, showToast]);
+  }, [user]);
 
   // Load expenses for active trip using getDocs (more reliable than onSnapshot with connection issues)
   useEffect(() => {
@@ -197,14 +193,10 @@ export default function App() {
 
     loadExpenses();
 
-    // Also set up a periodic refresh to catch new expenses
-    const intervalId = setInterval(loadExpenses, 10000);
-
     return () => {
       isMounted = false;
-      clearInterval(intervalId);
     };
-  }, [activeTrip, showToast]);
+  }, [activeTrip]);
 
   // Handlers
   const handleLogin = useCallback(async () => {
@@ -214,7 +206,7 @@ export default function App() {
       console.error('Login error:', error);
       showToast('Failed to sign in', 'error');
     }
-  }, [showToast]);
+  }, []);
 
   const handleLogout = useCallback(async () => {
     try {
@@ -226,7 +218,7 @@ export default function App() {
       console.error('Logout error:', error);
       showToast('Failed to sign out', 'error');
     }
-  }, [showToast]);
+  }, []);
 
   const handleProfileUpdate = useCallback(async (profileData) => {
     setUserProfile(profileData);
@@ -280,7 +272,7 @@ export default function App() {
     } finally {
       setIsLoading(false);
     }
-  }, [showToast, userProfile, user]);
+  }, [userProfile, user]);
 
   const handleSaveExpense = useCallback(async (expenseData) => {
     setIsLoading(true);
@@ -334,7 +326,7 @@ export default function App() {
     } finally {
       setIsLoading(false);
     }
-  }, [showToast, activeTrip, user]);
+  }, [activeTrip, user]);
 
   const handleDeleteExpense = useCallback(async (expenseId) => {
     if (!confirm('Delete this expense?')) return;
@@ -346,7 +338,7 @@ export default function App() {
       console.error('Delete error:', error);
       showToast('Failed to delete expense', 'error');
     }
-  }, [showToast]);
+  }, []);
 
   const handleEditExpense = useCallback((expense) => {
     setEditingExpense(expense);

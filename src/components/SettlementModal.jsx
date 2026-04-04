@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { X, ArrowRightLeft, Check, Filter, Undo2, ArrowUpCircle, ArrowDownCircle, Wallet } from 'lucide-react';
 import { formatCurrency } from '../utils/currency';
-import { collection, addDoc, deleteDoc, doc, query, where, onSnapshot } from 'firebase/firestore';
+import { collection, addDoc, deleteDoc, doc, query, where, getDocs } from 'firebase/firestore';
 import { db } from '../App';
 import PartialSettlementModal from './PartialSettlementModal';
 
@@ -11,25 +11,27 @@ export default function SettlementModal({ trip, expenses, exchangeRates, onClose
   const [isLoading, setIsLoading] = useState(false);
   const [partialSettlementTarget, setPartialSettlementTarget] = useState(null);
 
-  // Load existing settlements from Firestore
+  // Load existing settlements from Firestore (one-time fetch)
   useEffect(() => {
-    const q = query(
-      collection(db, 'settlements'),
-      where('tripId', '==', trip.id)
-    );
-    
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const loaded = snapshot.docs.map(d => ({
-        id: d.id,
-        ...d.data(),
-        settlementKey: `${d.data().fromEmail || ''}-${d.data().toEmail || ''}`
-      }));
-      setSettledDebts(loaded);
-    }, (error) => {
-      console.error('Error loading settlements:', error);
-    });
+    const loadSettlements = async () => {
+      try {
+        const q = query(
+          collection(db, 'settlements'),
+          where('tripId', '==', trip.id)
+        );
+        const snapshot = await getDocs(q);
+        const loaded = snapshot.docs.map(d => ({
+          id: d.id,
+          ...d.data(),
+          settlementKey: `${d.data().fromEmail || ''}-${d.data().toEmail || ''}`
+        }));
+        setSettledDebts(loaded);
+      } catch (error) {
+        console.error('Error loading settlements:', error);
+      }
+    };
 
-    return unsubscribe;
+    loadSettlements();
   }, [trip.id]);
 
   // Calculate per-member breakdown (Paid, Spent, Net)
