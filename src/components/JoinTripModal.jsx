@@ -2,8 +2,9 @@ import React, { useState } from 'react';
 import { X, Search, Loader2 } from 'lucide-react';
 import { collection, query, where, getDocs, updateDoc, doc, arrayUnion } from 'firebase/firestore';
 import { db } from '../App';
+import { assignEmojiToMember } from '../utils/emojis';
 
-export default function JoinTripModal({ user, onClose, onJoined, showToast }) {
+export default function JoinTripModal({ user, userProfile, onClose, onJoined, showToast }) {
   const [inviteCode, setInviteCode] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [foundTrip, setFoundTrip] = useState(null);
@@ -48,12 +49,17 @@ export default function JoinTripModal({ user, onClose, onJoined, showToast }) {
 
     setIsLoading(true);
     try {
+      // Get user's emoji from profile, or assign a new one
+      const existingEmojis = foundTrip.members?.filter(m => m.emoji).map(m => m.emoji) || [];
+      const userEmoji = userProfile?.emoji || assignEmojiToMember({ name: user.name }, existingEmojis);
+
       await updateDoc(doc(db, 'trips', foundTrip.id), {
         memberEmails: arrayUnion(user.email),
         members: arrayUnion({
           name: user.name,
           email: user.email,
-          isClaimed: true
+          isClaimed: true,
+          emoji: userEmoji
         })
       });
       
