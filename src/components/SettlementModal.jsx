@@ -63,14 +63,25 @@ export default function SettlementModal({ trip, expenses, exchangeRates, onClose
       }
       
       // Add to each split member's "spent" using their NAME
-      const splitList = expense.splitWith || [];
-      const share = splitList.length > 0 ? amountInBase / splitList.length : 0;
-      
-      splitList.forEach(name => {
-        if (name && breakdown[name]) {
-          breakdown[name].spent += share;
-        }
-      });
+      const splitAmounts = expense.splitAmounts;
+      if (splitAmounts && typeof splitAmounts === 'object' && Object.keys(splitAmounts).length > 0) {
+        // Individual orders mode - use exact amounts each person owes
+        Object.entries(splitAmounts).forEach(([name, amt]) => {
+          if (name && breakdown[name]) {
+            breakdown[name].spent += (amt || 0) * rate;
+          }
+        });
+      } else {
+        // Equal split (default)
+        const splitList = expense.splitWith || [];
+        const share = splitList.length > 0 ? amountInBase / splitList.length : 0;
+        
+        splitList.forEach(name => {
+          if (name && breakdown[name]) {
+            breakdown[name].spent += share;
+          }
+        });
+      }
     });
     
     // Calculate net for each member
@@ -105,13 +116,14 @@ export default function SettlementModal({ trip, expenses, exchangeRates, onClose
     expenses.forEach(expense => {
       if (!expense || typeof expense !== 'object') return;
       
-      // Skip expenses with no split members
-      const splitList = expense.splitWith || [];
-      if (!Array.isArray(splitList) || splitList.length === 0) return;
-      
       const rate = exchangeRates[expense.currency] || 1;
-      const amountInBase = expense.amount * rate;
-      const share = amountInBase / splitList.length;
+      const amountInBase = (expense.amount || 0) * rate;
+
+      const splitAmounts = expense.splitAmounts;
+      const splitList = expense.splitWith || [];
+
+      // Skip only if neither splitWith nor splitAmounts
+      if ((!Array.isArray(splitList) || splitList.length === 0) && (!splitAmounts || Object.keys(splitAmounts || {}).length === 0)) return;
 
       // Resolution order: 1) explicit email fields (newest) 2) memberEmails mapping (old) 3) name fallback
       const memberEmails = expense.memberEmails || {};
@@ -130,15 +142,35 @@ export default function SettlementModal({ trip, expenses, exchangeRates, onClose
         balances[payerEmail].amount += amountInBase;
       }
 
-      // Resolve split participants: use explicit splitWithEmails if available, otherwise map names
-      if (expense.splitWithEmails && Array.isArray(expense.splitWithEmails)) {
+      // Handle individual split amounts or equal split
+      if (splitAmounts && typeof splitAmounts === 'object') {
+        // Individual orders: subtract exact amount each owes
+        Object.entries(splitAmounts).forEach(([name, amt]) => {
+          const personShare = (amt || 0) * rate;
+          // Try direct email key first (if name is actually email? unlikely), then resolve
+          if (balances[name]) {
+            balances[name].amount -= personShare;
+          } else {
+            let email = memberEmails[name];
+            if (!email) {
+              const currentMember = trip.members.find(m => m.name === name);
+              email = currentMember?.email;
+            }
+            if (email && balances[email]) {
+              balances[email].amount -= personShare;
+            }
+          }
+        });
+      } else if (expense.splitWithEmails && Array.isArray(expense.splitWithEmails)) {
+        const share = splitList.length > 0 ? amountInBase / splitList.length : 0;
         expense.splitWithEmails.forEach(email => {
           if (email && balances[email]) {
             balances[email].amount -= share;
           }
         });
       } else {
-        // Fallback: resolve via memberEmails mapping or name
+        // Equal split fallback
+        const share = splitList.length > 0 ? amountInBase / splitList.length : 0;
         splitList.forEach(name => {
           let email = memberEmails[name];
           if (!email) {

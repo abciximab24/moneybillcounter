@@ -23,8 +23,13 @@ export default function AddExpenseModal({ trip, user, userProfile, onClose, onSa
   const [manualAmount, setManualAmount] = useState('');
   const [manualDesc, setManualDesc] = useState('');
   const [selectedPayer, setSelectedPayer] = useState(userDisplayName || user?.name);
-  const [splitMode, setSplitMode] = useState('all'); // 'all', 'select'
+  const [splitMode, setSplitMode] = useState('all'); // 'all', 'select', 'individual'
   const [selectedMembers, setSelectedMembers] = useState(trip.members.map(m => m.name));
+  const [orderAmounts, setOrderAmounts] = useState(() => {
+    const init = {};
+    trip.members.forEach(m => { init[m.name] = ''; });
+    return init;
+  });
   const [useMagicMode, setUseMagicMode] = useState(true);
 
   // Parse natural language input with payer and split parsing
@@ -166,8 +171,20 @@ export default function AddExpenseModal({ trip, user, userProfile, onClose, onSa
     if (amount <= 0 || !manualDesc.trim()) return null;
     
     let splitWith = selectedMembers;
+    let splitAmounts = null;
+
     if (splitMode === 'all') {
       splitWith = trip.members.map(m => m.name);
+    } else if (splitMode === 'select') {
+      splitWith = selectedMembers;
+    } else if (splitMode === 'individual') {
+      const amounts = {};
+      Object.entries(orderAmounts).forEach(([name, val]) => {
+        const num = parseFloat(val) || 0;
+        amounts[name] = num;
+      });
+      splitWith = Object.keys(amounts).filter(n => amounts[n] > 0);
+      splitAmounts = amounts;
     }
     
     return {
@@ -176,9 +193,10 @@ export default function AddExpenseModal({ trip, user, userProfile, onClose, onSa
       currency: selectedCurrency,
       payer: selectedPayer,
       splitWith,
-      splitMode
+      splitMode,
+      splitAmounts
     };
-  }, [useMagicMode, manualAmount, manualDesc, selectedCurrency, selectedPayer, splitMode, selectedMembers, trip]);
+  }, [useMagicMode, manualAmount, manualDesc, selectedCurrency, selectedPayer, splitMode, selectedMembers, orderAmounts, trip]);
 
   const expenseToSave = useMagicMode ? parsedExpense : manualExpense;
 
@@ -335,25 +353,58 @@ export default function AddExpenseModal({ trip, user, userProfile, onClose, onSa
                 >
                   Select
                 </button>
-              </div>
-
-          {splitMode === 'select' && (
-            <div className="flex flex-wrap gap-2">
-              {trip.members.map(member => (
                 <button
-                  key={member.name}
-                  onClick={() => toggleMember(member.name)}
-                  className={`px-3 py-2 rounded-xl text-sm font-bold transition-all ${
-                    selectedMembers.includes(member.name)
-                      ? 'bg-indigo-600 text-white'
-                      : 'bg-slate-100 text-slate-600'
+                  onClick={() => setSplitMode('individual')}
+                  className={`px-4 py-2 rounded-xl text-sm font-bold transition-all ${
+                    splitMode === 'individual' ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-600'
                   }`}
                 >
-                  {member.emoji || '👤'} {member.name.split(' ')[0]}
+                  Individual
                 </button>
-              ))}
-            </div>
-          )}
+              </div>
+
+              {splitMode === 'select' && (
+                <div className="flex flex-wrap gap-2">
+                  {trip.members.map(member => (
+                    <button
+                      key={member.name}
+                      onClick={() => toggleMember(member.name)}
+                      className={`px-3 py-2 rounded-xl text-sm font-bold transition-all ${
+                        selectedMembers.includes(member.name)
+                          ? 'bg-indigo-600 text-white'
+                          : 'bg-slate-100 text-slate-600'
+                      }`}
+                    >
+                      {member.emoji || '👤'} {member.name.split(' ')[0]}
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {splitMode === 'individual' && (
+                <div className="space-y-2 border border-slate-200 rounded-2xl p-3 bg-slate-50">
+                  <p className="text-xs font-bold text-slate-500 mb-1">Enter each person's order amount</p>
+                  {trip.members.map(member => (
+                    <div key={member.name} className="flex items-center gap-2">
+                      <span className="flex-1 text-sm font-medium">
+                        {member.emoji || '👤'} {member.name}
+                      </span>
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        value={orderAmounts[member.name] || ''}
+                        onChange={(e) => setOrderAmounts(prev => ({ ...prev, [member.name]: e.target.value }))}
+                        placeholder="0.00"
+                        className="w-24 p-2 bg-white rounded-xl font-bold outline-none text-right"
+                      />
+                    </div>
+                  ))}
+                  <div className="text-xs text-slate-500 pt-1">
+                    Orders total: {Object.values(orderAmounts).reduce((s, v) => s + (parseFloat(v) || 0), 0).toFixed(2)} {selectedCurrency}
+                  </div>
+                </div>
+              )}
             </div>
           </>
         )}

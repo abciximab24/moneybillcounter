@@ -61,7 +61,9 @@ const ExpenseList = memo(function ExpenseList({ expenses, baseCurrency, exchange
                 <span className="text-lg">{getMemberEmoji(expense.payer)}</span>
                 <p className="text-[10px] text-slate-300 font-bold uppercase">
                   {expense.payer}
-                  {Array.isArray(expense.splitWith) && expense.splitWith.length > 0 && (
+                  {expense.splitMode === 'individual' || expense.splitAmounts ? (
+                    <span className="ml-1">• Itemized orders</span>
+                  ) : Array.isArray(expense.splitWith) && expense.splitWith.length > 0 && (
                     <span className="ml-1">
                       • Split {expense.splitMode === 'all' ? 'all' : expense.splitMode === 'exclude' ? 'all-' + (members.length - expense.splitWith.length) : expense.splitWith.length}
                     </span>

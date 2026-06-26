@@ -252,7 +252,11 @@ export default function App() {
       }
       
       // Resolve splitWith members: find each by name in current trip members, use correct names
-      const resolvedSplitWith = (expenseData.splitWith || []).map(name => {
+      let splitWithFromData = expenseData.splitWith || [];
+      if ((!splitWithFromData || splitWithFromData.length === 0) && expenseData.splitAmounts) {
+        splitWithFromData = Object.keys(expenseData.splitAmounts).filter(n => (expenseData.splitAmounts[n] || 0) > 0);
+      }
+      const resolvedSplitWith = splitWithFromData.map(name => {
         const member = activeTrip.members.find(m => m.name === name);
         return member ? member.name : name;
       });
@@ -260,18 +264,34 @@ export default function App() {
       // Get payer's email based on resolved payer NAME (not based on who is logged in!)
       const payerEmail = memberEmails[payerName] || (payerByEmail?.email);
       const splitWithEmails = resolvedSplitWith.map(name => memberEmails[name]);
-      
-      await addDoc(collection(db, 'expenses'), {
+
+      const expenseToStore = {
         ...expenseData,
         payer: payerName,
         splitWith: resolvedSplitWith,
         memberEmails,
         payerEmail,
         splitWithEmails
+      };
+
+      const docRef = await addDoc(collection(db, 'expenses'), expenseToStore);
+
+      // Optimistic update for instant UI refresh after adding bill
+      const newExpense = {
+        id: docRef.id,
+        ...expenseToStore
+      };
+
+      setExpenses(prev => {
+        const filtered = prev.filter(e => e.id !== docRef.id);
+        return [newExpense, ...filtered];
       });
+
       showToast('Expense logged!', 'success');
       setShowAddExpense(false);
-      await loadExpenses(); // refresh expenses list immediately
+
+      // Optional background sync (in case of server fields or ordering)
+      loadExpenses();
     } catch (error) {
       console.error('Save expense error:', error);
       showToast('Failed to save expense', 'error');
@@ -282,14 +302,19 @@ export default function App() {
 
   const handleDeleteExpense = useCallback(async (expenseId) => {
     if (!confirm('Delete this expense?')) return;
-    
+
+    // Optimistic remove for instant UI refresh
+    setExpenses(prev => prev.filter(e => e.id !== expenseId));
+
     try {
       await deleteDoc(doc(db, 'expenses', expenseId));
       showToast('Expense deleted', 'success');
-      await loadExpenses();
+      loadExpenses(); // background sync
     } catch (error) {
       console.error('Delete error:', error);
       showToast('Failed to delete expense', 'error');
+      // revert on error by reloading
+      loadExpenses();
     }
   }, [showToast, loadExpenses]);
 
@@ -298,10 +323,20 @@ export default function App() {
     setShowEditExpense(true);
   }, []);
 
-  const handleExpenseUpdated = useCallback(async () => {
+  const handleExpenseUpdated = useCallback(async (updatedExpense) => {
     setShowEditExpense(false);
     setEditingExpense(null);
-    await loadExpenses();
+
+    if (updatedExpense && updatedExpense.id) {
+      // Optimistic update for instant UI refresh after edit
+      setExpenses(prev =>
+        prev.map(e =>
+          e.id === updatedExpense.id ? { ...e, ...updatedExpense } : e
+        )
+      );
+    }
+
+    loadExpenses(); // background sync
   }, [loadExpenses]);
 
   const handleTabChange = useCallback((tab) => {

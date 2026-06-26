@@ -35,7 +35,8 @@ export default function TripDetail({
     if (!expense || typeof expense !== 'object') return false;
     const matchesMember = filterMember === 'all' || 
       expense.payer === filterMember || 
-      (Array.isArray(expense.splitWith) && expense.splitWith.includes(filterMember));
+      (Array.isArray(expense.splitWith) && expense.splitWith.includes(filterMember)) ||
+      (expense.splitAmounts && expense.splitAmounts[filterMember] > 0);
     
     const matchesCategory = filterCategory === 'all' || 
       expense.category === filterCategory;

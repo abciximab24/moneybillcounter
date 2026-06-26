@@ -21,6 +21,18 @@ export default function EditExpenseModal({ expense, trip, onClose, onUpdated, sh
   const [payer, setPayer] = useState(safeExpense.payer || '');
   const [splitMode, setSplitMode] = useState(safeExpense.splitMode || 'all');
   const [selectedMembers, setSelectedMembers] = useState(Array.isArray(safeExpense.splitWith) ? safeExpense.splitWith : trip.members.map(m => m.name));
+  const [orderAmounts, setOrderAmounts] = useState(() => {
+    if (safeExpense.splitMode === 'individual' && safeExpense.splitAmounts) {
+      const init = {};
+      trip.members.forEach(m => {
+        init[m.name] = (safeExpense.splitAmounts[m.name] || 0).toString();
+      });
+      return init;
+    }
+    const init = {};
+    trip.members.forEach(m => { init[m.name] = '0'; });
+    return init;
+  });
   const [isLoading, setIsLoading] = useState(false);
 
   const handleUpdate = async () => {
@@ -31,8 +43,19 @@ export default function EditExpenseModal({ expense, trip, onClose, onUpdated, sh
     }
 
     let splitWith = selectedMembers;
+    let splitAmounts = null;
+
     if (splitMode === 'all') {
       splitWith = trip.members.map(m => m.name);
+    } else if (splitMode === 'select') {
+      splitWith = selectedMembers;
+    } else if (splitMode === 'individual') {
+      const amounts = {};
+      Object.entries(orderAmounts).forEach(([name, val]) => {
+        amounts[name] = parseFloat(val) || 0;
+      });
+      splitWith = Object.keys(amounts).filter(n => amounts[n] > 0);
+      splitAmounts = amounts;
     }
 
     // Build email mappings
@@ -42,7 +65,7 @@ export default function EditExpenseModal({ expense, trip, onClose, onUpdated, sh
 
     setIsLoading(true);
     try {
-      await updateDoc(doc(db, 'expenses', expense.id), {
+      const updatedData = {
         desc: desc.trim(),
         amount: numAmount,
         currency,
@@ -52,10 +75,13 @@ export default function EditExpenseModal({ expense, trip, onClose, onUpdated, sh
         payerEmail,
         splitWithEmails,
         updatedAt: Date.now()
-      });
+      };
+      if (splitAmounts) updatedData.splitAmounts = splitAmounts;
+
+      await updateDoc(doc(db, 'expenses', expense.id), updatedData);
       showToast('Expense updated', 'success');
       setIsLoading(false);
-      onUpdated();
+      onUpdated({ id: expense.id, ...updatedData });
     } catch (error) {
       console.error('Update error:', error);
       showToast('Failed to update expense', 'error');
@@ -76,6 +102,18 @@ export default function EditExpenseModal({ expense, trip, onClose, onUpdated, sh
     let splitWith = selectedMembers;
     if (splitMode === 'all') {
       splitWith = trip.members.map(m => m.name);
+    } else if (splitMode === 'individual') {
+      const amounts = {};
+      Object.entries(orderAmounts).forEach(([n, v]) => { amounts[n] = parseFloat(v) || 0; });
+      splitWith = Object.keys(amounts).filter(n => amounts[n] > 0);
+      const total = Object.values(amounts).reduce((s, v) => s + v, 0);
+      if (splitWith.length === 0) return null;
+      return {
+        members: splitWith,
+        perPerson: null,
+        isIndividual: true,
+        total
+      };
     }
     
     if (splitWith.length === 0 || numAmount <= 0) return null;
@@ -168,9 +206,17 @@ export default function EditExpenseModal({ expense, trip, onClose, onUpdated, sh
             >
               Select
             </button>
+            <button
+              onClick={() => setSplitMode('individual')}
+              className={`px-4 py-2 rounded-xl text-sm font-bold transition-all ${
+                splitMode === 'individual' ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-600'
+              }`}
+            >
+              Individual
+            </button>
           </div>
 
-          {splitMode !== 'all' && (
+          {splitMode === 'select' && (
             <div className="flex flex-wrap gap-2">
               {trip.members.map(member => (
                 <button
@@ -187,18 +233,54 @@ export default function EditExpenseModal({ expense, trip, onClose, onUpdated, sh
               ))}
             </div>
           )}
+
+          {splitMode === 'individual' && (
+            <div className="space-y-2 border border-slate-200 rounded-2xl p-3 bg-slate-50">
+              <p className="text-xs font-bold text-slate-500 mb-1">Enter each person's order amount</p>
+              {trip.members.map(member => (
+                <div key={member.name} className="flex items-center gap-2">
+                  <span className="flex-1 text-sm font-medium">
+                    {member.emoji || '👤'} {member.name}
+                  </span>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={orderAmounts[member.name] || ''}
+                    onChange={(e) => setOrderAmounts(prev => ({ ...prev, [member.name]: e.target.value }))}
+                    placeholder="0.00"
+                    className="w-24 p-2 bg-white rounded-xl font-bold outline-none text-right"
+                  />
+                </div>
+              ))}
+              <div className="text-xs text-slate-500 pt-1">
+                Orders total: {Object.values(orderAmounts).reduce((s, v) => s + (parseFloat(v) || 0), 0).toFixed(2)} {currency}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Split Preview */}
         {splitPreview && (
           <div className="bg-slate-50 p-4 rounded-2xl mb-6">
             <p className="text-xs font-bold text-slate-400 uppercase mb-2">Split Preview</p>
-            <p className="font-bold text-lg">
-              {splitPreview.perPerson.toFixed(2)} {currency} each
-            </p>
-            <p className="text-sm text-slate-500">
-              Split between {splitPreview.members.join(', ')}
-            </p>
+            {splitPreview.isIndividual ? (
+              <>
+                <p className="font-bold text-lg">Itemized orders</p>
+                <p className="text-sm text-slate-500">
+                  Total orders: {splitPreview.total?.toFixed(2)} {currency} • Split between {splitPreview.members.join(', ')}
+                </p>
+              </>
+            ) : (
+              <>
+                <p className="font-bold text-lg">
+                  {splitPreview.perPerson.toFixed(2)} {currency} each
+                </p>
+                <p className="text-sm text-slate-500">
+                  Split between {splitPreview.members.join(', ')}
+                </p>
+              </>
+            )}
           </div>
         )}
 

@@ -50,19 +50,29 @@ export const exportExpensesToCSV = (expenses, trip, exchangeRates) => {
     const rate = exchangeRates[currency] || 1;
     const baseAmount = (amount * rate).toFixed(2);
 
-    const splitMode = expense.splitMode || 'equal';
-
-    const splitWithName = Array.isArray(expense.splitWith) && expense.splitWith.length > 0
+    let splitMode = expense.splitMode || 'equal';
+    let splitWithName = Array.isArray(expense.splitWith) && expense.splitWith.length > 0
       ? expense.splitWith.join(', ')
       : trip.members.map(m => m.name).join(', ');
-    const splitWith = quote(splitWithName);
+    let sharePerPerson = '';
 
-    const splitCount = expense.splitWith && expense.splitWith.length > 0
-      ? expense.splitWith.length
-      : trip.members.length;
-    const sharePerPerson = splitCount > 0
-      ? (baseAmount / splitCount).toFixed(2)
-      : baseAmount;
+    if (expense.splitAmounts && typeof expense.splitAmounts === 'object') {
+      splitMode = 'individual';
+      splitWithName = Object.entries(expense.splitAmounts)
+        .filter(([, a]) => a > 0)
+        .map(([n, a]) => `${n}:${a}`)
+        .join('; ');
+      sharePerPerson = 'itemized';
+    } else {
+      const splitCount = expense.splitWith && expense.splitWith.length > 0
+        ? expense.splitWith.length
+        : trip.members.length;
+      sharePerPerson = splitCount > 0
+        ? (baseAmount / splitCount).toFixed(2)
+        : baseAmount;
+    }
+
+    const splitWith = quote(splitWithName);
 
     return [
       quote(date),
