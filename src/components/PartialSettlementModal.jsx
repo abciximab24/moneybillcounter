@@ -3,7 +3,6 @@ import { X } from 'lucide-react';
 import { formatCurrency } from '../utils/currency';
 
 export default function PartialSettlementModal({ 
-  settlement, 
   remainingAmount, 
   baseCurrency, 
   onConfirm, 

@@ -3,9 +3,9 @@ import { X, Copy, Check, Trash2, Loader2 } from 'lucide-react';
 import { CURRENCIES } from '../utils/currency';
 import { getAllEmojis } from '../utils/emojis';
 import { doc, updateDoc, deleteDoc } from 'firebase/firestore';
-import { db } from '../App';
+import { db } from '../firebase';
 
-export default function TripSettingsModal({ trip, user, userProfile, onClose, onUpdated, showToast }) {
+export default function TripSettingsModal({ trip, user, onClose, onUpdated, showToast }) {
   const [tripName, setTripName] = useState(trip.name);
   const [baseCurrency, setBaseCurrency] = useState(trip.baseCurrency);
   const [isLoading, setIsLoading] = useState(false);

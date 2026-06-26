@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { X, Search, Loader2 } from 'lucide-react';
 import { collection, query, where, getDocs, updateDoc, doc, arrayUnion } from 'firebase/firestore';
-import { db } from '../App';
+import { db } from '../firebase';
 import { assignEmojiToMember } from '../utils/emojis';
 
 export default function JoinTripModal({ user, userProfile, onClose, onJoined, showToast }) {
@@ -28,7 +28,8 @@ export default function JoinTripModal({ user, userProfile, onClose, onJoined, sh
         const tripData = tripDoc.data();
         
         // Check if already a member
-        if (tripData.memberEmails.includes(user.email)) {
+        const memberEmails = tripData.memberEmails || [];
+        if (memberEmails.includes(user.email)) {
           showToast('You are already a member of this trip', 'info');
           setFoundTrip(null);
           return;
@@ -51,12 +52,13 @@ export default function JoinTripModal({ user, userProfile, onClose, onJoined, sh
     try {
       // Get user's emoji from profile, or assign a new one
       const existingEmojis = foundTrip.members?.filter(m => m.emoji).map(m => m.emoji) || [];
-      const userEmoji = userProfile?.emoji || assignEmojiToMember({ name: user.name }, existingEmojis);
+      const displayName = userProfile?.displayName || user.name || 'User';
+      const userEmoji = userProfile?.emoji || assignEmojiToMember({ name: displayName }, existingEmojis);
 
       await updateDoc(doc(db, 'trips', foundTrip.id), {
         memberEmails: arrayUnion(user.email),
         members: arrayUnion({
-          name: user.name,
+          name: displayName,
           email: user.email,
           isClaimed: true,
           emoji: userEmoji
@@ -64,7 +66,9 @@ export default function JoinTripModal({ user, userProfile, onClose, onJoined, sh
       });
       
       showToast(`Joined "${foundTrip.name}" successfully!`, 'success');
-      onJoined();
+      if (typeof onJoined === 'function') {
+        await onJoined();
+      }
     } catch (error) {
       console.error('Join error:', error);
       showToast('Failed to join trip', 'error');

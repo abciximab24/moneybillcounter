@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { initializeApp } from 'firebase/app';
-import { getAuth, GoogleAuthProvider, signInWithPopup, onAuthStateChanged, signOut } from 'firebase/auth';
-import { getFirestore, collection, addDoc, onSnapshot, query, where, orderBy, doc, deleteDoc, getDoc, getDocs, setDoc, updateDoc, arrayUnion } from 'firebase/firestore';
+import { signInWithPopup, onAuthStateChanged } from 'firebase/auth';
+import { collection, addDoc, query, where, orderBy, doc, deleteDoc, getDoc, getDocs, setDoc, updateDoc } from 'firebase/firestore';
+import { auth, db, provider } from './firebase';
 
 // Components
 import LoginPage from './components/LoginPage';
@@ -20,24 +20,6 @@ import { useToast } from './components/Toast';
 // Utils
 import { fetchExchangeRates } from './utils/currency';
 import { assignEmojiToMember } from './utils/emojis';
-
-// Firebase config
-const firebaseConfig = {
-  apiKey: "AIzaSyARVY1R4pdr7b8L6Wf3h_yHJQ6_kz6lofA",
-  authDomain: "moneybillcounter.firebaseapp.com",
-  projectId: "moneybillcounter",
-  storageBucket: "moneybillcounter.firebasestorage.app",
-  messagingSenderId: "298141152151",
-  appId: "1:298141152151:web:c68f6c58f09ff74e708ad2",
-  measurementId: "G-6NTV5XBHDT"
-};
-
-const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
-const db = getFirestore(app);
-const provider = new GoogleAuthProvider();
-
-export { db };
 
 export default function App() {
   // Auth state
@@ -121,82 +103,61 @@ export default function App() {
     return unsubscribe;
   }, []);
 
+  // Reusable trip loader (getDocs to avoid connection issues)
+  const loadTrips = useCallback(async () => {
+    if (!user) return;
+    try {
+      const q = query(
+        collection(db, 'trips'),
+        where('memberEmails', 'array-contains', user.email)
+      );
+      const snapshot = await getDocs(q);
+      const loadedTrips = snapshot.docs.map(d => {
+        const data = d.data();
+        const existingEmojis = data.members?.filter(m => m.emoji).map(m => m.emoji) || [];
+        const membersWithEmojis = data.members?.map(m => ({
+          ...m,
+          emoji: m.emoji || assignEmojiToMember(m, existingEmojis)
+        })) || [];
+        
+        return { id: d.id, ...data, members: membersWithEmojis };
+      });
+      setTrips(loadedTrips);
+    } catch (error) {
+      console.error('Error loading trips:', error);
+      showToast('Failed to load trips', 'error');
+    }
+  }, [user, showToast]);
+
   // Load trips for user using getDocs (avoids Firestore Listen connection issues)
   useEffect(() => {
-    if (!user) return;
-
-    let isMounted = true;
-
-    const loadTrips = async () => {
-      try {
-        const q = query(
-          collection(db, 'trips'),
-          where('memberEmails', 'array-contains', user.email)
-        );
-        const snapshot = await getDocs(q);
-        if (isMounted) {
-          const loadedTrips = snapshot.docs.map(d => {
-            const data = d.data();
-            const existingEmojis = data.members?.filter(m => m.emoji).map(m => m.emoji) || [];
-            const membersWithEmojis = data.members?.map(m => ({
-              ...m,
-              emoji: m.emoji || assignEmojiToMember(m, existingEmojis)
-            })) || [];
-            
-            return { id: d.id, ...data, members: membersWithEmojis };
-          });
-          setTrips(loadedTrips);
-        }
-      } catch (error) {
-        console.error('Error loading trips:', error);
-        if (isMounted) {
-          showToast('Failed to load trips', 'error');
-        }
-      }
-    };
-
     loadTrips();
+  }, [loadTrips]);
 
-    return () => {
-      isMounted = false;
-    };
-  }, [user]);
+  // Reusable expense loader
+  const loadExpenses = useCallback(async () => {
+    if (!activeTrip) return;
+    try {
+      // Use getDocs as primary method (avoids Firestore Listen connection issues)
+      const q = query(
+        collection(db, 'expenses'),
+        where('tripId', '==', activeTrip.id),
+        orderBy('timestamp', 'desc')
+      );
+      const snapshot = await getDocs(q);
+      const loadedExpenses = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+      console.log(`Loaded ${loadedExpenses.length} expenses for trip ${activeTrip.id}`);
+      setExpenses(loadedExpenses);
+    } catch (error) {
+      console.error('Error loading expenses:', error);
+      showToast('Failed to load expenses. Please refresh.', 'error');
+    }
+  }, [activeTrip, showToast]);
 
   // Load expenses for active trip using getDocs (more reliable than onSnapshot with connection issues)
   useEffect(() => {
-    if (!activeTrip) return;
-
-    let isMounted = true;
-    const isValidExpense = (e) => e && typeof e === 'object' && typeof e.id === 'string';
-
-    const loadExpenses = async () => {
-      try {
-        // Use getDocs as primary method (avoids Firestore Listen connection issues)
-        const q = query(
-          collection(db, 'expenses'),
-          where('tripId', '==', activeTrip.id),
-          orderBy('timestamp', 'desc')
-        );
-        const snapshot = await getDocs(q);
-        if (isMounted) {
-          const loadedExpenses = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-          console.log(`Loaded ${loadedExpenses.length} expenses for trip ${activeTrip.id}`);
-          setExpenses(loadedExpenses);
-        }
-      } catch (error) {
-        console.error('Error loading expenses:', error);
-        if (isMounted) {
-          showToast('Failed to load expenses. Please refresh.', 'error');
-        }
-      }
-    };
-
     loadExpenses();
-
-    return () => {
-      isMounted = false;
-    };
-  }, [activeTrip]);
+  }, [loadExpenses]);
 
   // Handlers
   const handleLogin = useCallback(async () => {
@@ -206,19 +167,7 @@ export default function App() {
       console.error('Login error:', error);
       showToast('Failed to sign in', 'error');
     }
-  }, []);
-
-  const handleLogout = useCallback(async () => {
-    try {
-      await signOut(auth);
-      setActiveTrip(null);
-      setActiveTab('home');
-      setView('home');
-    } catch (error) {
-      console.error('Logout error:', error);
-      showToast('Failed to sign out', 'error');
-    }
-  }, []);
+  }, [showToast]);
 
   const handleProfileUpdate = useCallback(async (profileData) => {
     setUserProfile(profileData);
@@ -243,10 +192,11 @@ export default function App() {
       }
       
       console.log(`Updated profile in ${tripsSnapshot.docs.length} trips`);
+      await loadTrips(); // refresh local list with updated names/emojis
     } catch (error) {
       console.error('Error syncing profile to trips:', error);
     }
-  }, [user?.email]);
+  }, [user?.email, loadTrips]);
 
   const handleCreateTrip = useCallback(async (tripData) => {
     setIsLoading(true);
@@ -266,13 +216,14 @@ export default function App() {
       });
       showToast('Trip created!', 'success');
       setShowCreateTrip(false);
+      await loadTrips(); // refresh list so new trip appears
     } catch (error) {
       console.error('Create trip error:', error);
       showToast('Failed to create trip', 'error');
     } finally {
       setIsLoading(false);
     }
-  }, [userProfile, user]);
+  }, [userProfile, user, showToast, loadTrips]);
 
   const handleSaveExpense = useCallback(async (expenseData) => {
     setIsLoading(true);
@@ -320,13 +271,14 @@ export default function App() {
       });
       showToast('Expense logged!', 'success');
       setShowAddExpense(false);
+      await loadExpenses(); // refresh expenses list immediately
     } catch (error) {
       console.error('Save expense error:', error);
       showToast('Failed to save expense', 'error');
     } finally {
       setIsLoading(false);
     }
-  }, [activeTrip, user]);
+  }, [activeTrip, user, showToast, loadExpenses]);
 
   const handleDeleteExpense = useCallback(async (expenseId) => {
     if (!confirm('Delete this expense?')) return;
@@ -334,21 +286,23 @@ export default function App() {
     try {
       await deleteDoc(doc(db, 'expenses', expenseId));
       showToast('Expense deleted', 'success');
+      await loadExpenses();
     } catch (error) {
       console.error('Delete error:', error);
       showToast('Failed to delete expense', 'error');
     }
-  }, []);
+  }, [showToast, loadExpenses]);
 
   const handleEditExpense = useCallback((expense) => {
     setEditingExpense(expense);
     setShowEditExpense(true);
   }, []);
 
-  const handleExpenseUpdated = useCallback(() => {
+  const handleExpenseUpdated = useCallback(async () => {
     setShowEditExpense(false);
     setEditingExpense(null);
-  }, []);
+    await loadExpenses();
+  }, [loadExpenses]);
 
   const handleTabChange = useCallback((tab) => {
     setActiveTab(tab);
@@ -451,7 +405,10 @@ export default function App() {
           user={user}
           userProfile={userProfile}
           onClose={() => setShowJoinTrip(false)}
-          onJoined={() => setShowJoinTrip(false)}
+          onJoined={async () => {
+            setShowJoinTrip(false);
+            await loadTrips();
+          }}
           showToast={showToast}
         />
       )}
@@ -494,7 +451,6 @@ export default function App() {
         <TripSettingsModal
           trip={activeTrip}
           user={user}
-          userProfile={userProfile}
           onClose={() => setShowSettings(false)}
           onUpdated={() => setShowSettings(false)}
           showToast={showToast}

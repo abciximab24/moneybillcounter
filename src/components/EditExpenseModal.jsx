@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { X, Loader2 } from 'lucide-react';
 import { CURRENCIES } from '../utils/currency';
 import { doc, updateDoc } from 'firebase/firestore';
-import { db } from '../App';
+import { db } from '../firebase';
 
 // Helper: build email mapping from trip members
 const buildMemberEmails = (members) => {

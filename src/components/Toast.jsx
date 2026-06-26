@@ -1,5 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { X, Check, AlertCircle, Info } from 'lucide-react';
+
+/* eslint-disable react-refresh/only-export-components */
+
 
 const TOAST_TYPES = {
   success: {
@@ -24,20 +27,20 @@ export default function Toast({ message, type = 'info', onClose, duration = 1500
   const config = TOAST_TYPES[type] || TOAST_TYPES.info;
   const Icon = config.icon;
 
+  const handleClose = useCallback(() => {
+    setIsVisible(false);
+    setTimeout(() => {
+      if (onClose) onClose();
+    }, 300);
+  }, [onClose]);
+
   useEffect(() => {
     const timer = setTimeout(() => {
       handleClose();
     }, duration);
 
     return () => clearTimeout(timer);
-  }, [duration]);
-
-  const handleClose = () => {
-    setIsVisible(false);
-    setTimeout(() => {
-      if (onClose) onClose();
-    }, 300);
-  };
+  }, [duration, handleClose]);
 
   return (
     <div

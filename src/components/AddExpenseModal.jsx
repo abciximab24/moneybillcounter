@@ -207,18 +207,6 @@ export default function AddExpenseModal({ trip, user, userProfile, onClose, onSa
     );
   };
 
-  const getSplitPreview = () => {
-    if (!expenseToSave || !expenseToSave.splitWith || expenseToSave.splitWith.length === 0) return null;
-    
-    const perPerson = expenseToSave.amount / expenseToSave.splitWith.length;
-    return {
-      members: expenseToSave.splitWith,
-      perPerson
-    };
-  };
-
-  const splitPreview = getSplitPreview();
-
   const handleBackdropClick = (e) => {
     if (e.target === e.currentTarget) {
       onClose();

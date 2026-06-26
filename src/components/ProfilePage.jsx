@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Save, X } from 'lucide-react';
 import { getAllEmojis } from '../utils/emojis';
 import { doc, setDoc } from 'firebase/firestore';
-import { db } from '../App';
+import { db } from '../firebase';
 
 export default function ProfilePage({ user, userProfile, onProfileUpdate, showToast }) {
   const [displayName, setDisplayName] = useState(userProfile?.displayName || user.name || '');

@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { X, ArrowRightLeft, Check, Filter, Undo2, ArrowUpCircle, ArrowDownCircle, Wallet } from 'lucide-react';
 import { formatCurrency } from '../utils/currency';
 import { collection, addDoc, deleteDoc, doc, query, where, getDocs } from 'firebase/firestore';
-import { db } from '../App';
+import { db } from '../firebase';
 import PartialSettlementModal from './PartialSettlementModal';
 
 export default function SettlementModal({ trip, expenses, exchangeRates, onClose, showToast }) {
@@ -227,7 +227,7 @@ export default function SettlementModal({ trip, expenses, exchangeRates, onClose
     }
 
     return settlements;
-  }, [calculateBalances, settledDebts]);
+  }, [calculateBalances, settledDebts, getCumulativeSettled]);
 
   const handleSettleIndividual = async (settlement) => {
     if (settlement.isSettled) {
@@ -283,7 +283,6 @@ export default function SettlementModal({ trip, expenses, exchangeRates, onClose
     }
   };
 
-  const balances = calculateBalances();
   const settlements = calculateSettlements();
 
   // Filter by member email
@@ -499,7 +498,6 @@ export default function SettlementModal({ trip, expenses, exchangeRates, onClose
       {/* Partial Settlement Modal */}
       {partialSettlementTarget && (
         <PartialSettlementModal
-          settlement={partialSettlementTarget}
           remainingAmount={partialSettlementTarget.remainingAmount}
           baseCurrency={trip.baseCurrency}
           onConfirm={handleConfirmPartial}
